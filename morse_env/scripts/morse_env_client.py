@@ -1,6 +1,6 @@
 #! /usr/bin/env python3
 """
-Test client for the <morse> simulation environment.
+Test client for the <morse_env> simulation environment.
 
 This simple program shows how to control a robot from Python.
 
