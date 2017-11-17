@@ -1,0 +1,3 @@
+<launch>
+    <node name="segway_control" pkg="multi_agent_sim" type="segway_control.py" ns="/seggy1"/>
+</launch>
