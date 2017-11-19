@@ -35,15 +35,33 @@ class SegwayRMP9000(SegwayRMP400):
         self.odometry.add_stream('ros', topic="/{}/odom".format(self.name))
         self.base_scan.add_stream('ros', topic="/{}/base_scan".format(self.name))
 
+environments = {
+    'grande_salle': {
+        'path': 'laas/grande_salle',
+        'robot_p0': [5.8, 3, 0.0],
+        'cam_pos': [3, -10, 30],
+        'cam_rot': [0.2, 0, 0.0]
+    },
+
+    'indoor-1': {
+        'path': 'indoors-1/indoor-1',
+        'robot_p0': [15.0, 3.2, 0.5],
+        'cam_pos': [20, -5, 5],
+        'cam_rot': [1.0470, 0, 0.7854]
+    },
+
+    
+}
+
 def main():
-    r1 = SegwayRMP9000('seggy1', 15.0, 3.2, 0.5)
+    env_choice = environments['grande_salle']
+
+    r1 = SegwayRMP9000('seggy1', *(env_choice['robot_p0']))
     r1.add_ros_streams()
 
-    # r2 = SegwayRMP9000('seggy2')
-    # r2.translate(x=16.0, y=5.0, z=1.0)
-
-    env = Environment('indoors-1/indoor-1') #Environment('land-1/buildings_2')
-    env.set_camera_location([20, -5, 5])
-    env.set_camera_rotation([1.0470, 0, 0.7854])
+    # env = Environment('indoors-1/indoor-1') #Environment('land-1/buildings_2')
+    env = Environment(env_choice['path'])
+    env.set_camera_location(env_choice['cam_pos'])
+    env.set_camera_rotation(env_choice['cam_rot'])
 
 main()

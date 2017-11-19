@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   geometry_msgs
   nav_msgs
+  teleop_twist_keyboard
 )
 
 ## System dependencies are found with CMake's conventions

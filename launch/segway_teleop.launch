@@ -1,0 +1,6 @@
+<launch>
+    <group ns="/seggy1">
+        <node name="segway_control" pkg="multi_agent_sim" type="segway_control.py" args="--no-pub"/>
+        <node name="teleop" pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py"/>
+    </group>
+</launch>
