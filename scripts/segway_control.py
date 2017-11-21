@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 import sys
-
 import rospy
+
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped, Twist
 from nav_msgs.msg import Odometry
 
-class PositionController(object):
+from abstractions.abstract_node import AbstractNode
+
+class PositionController(AbstractNode):
     '''
     Published topics:
     * /rosout [rosgraph_msgs/Log] 2 publishers
@@ -25,7 +27,7 @@ class PositionController(object):
 
     '''
     def __init__(self, do_pub = True):
-        rospy.init_node('controller')
+        super(PositionController, self).__init__('controller')
 
         self.do_pub = do_pub
 
@@ -35,16 +37,11 @@ class PositionController(object):
         else:
             self.cmd_pub = None
 
-        self.pose_sub = rospy.Subscriber("pose", PoseStamped, self.callback_pose)
-        self.odom_sub = rospy.Subscriber("odom", Odometry, self.callback_odom)
-
         self.rate = rospy.Rate(10) #10Hz
 
         ### Internal ###
         self.pose = None
-        self.odom = None
-
-        
+        self.odom = None        
 
     def spin(self):
         try:
@@ -67,23 +64,6 @@ class PositionController(object):
 
     def callback_odom(self, msg):
         pass
-
-
-# def pose_callback(msg):
-#     pose = msg.pose
-#     rospy.loginfo("Received: {}, {}, {}".format(pose.position.x, pose.position.y, pose.position.z))
-
-# def odom_callback(msg):
-#     twist = msg.twist.twist
-#     rospy.loginfo("Received twist: {}, {}, {}".format(twist.linear.x, twist.linear.y, twist.linear.z))
-
-# def position_controller(namespace):
-#     rospy.init_node('controller')
-
-#     rospy.Subscriber("pose", PoseStamped, pose_callback)
-#     rospy.Subscriber("odom", Odometry, odom_callback)
-
-#     rospy.spin()
 
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == '--no-pub':

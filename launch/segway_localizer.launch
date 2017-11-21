@@ -3,6 +3,6 @@
 
     <group ns="$(arg my_name)">
         <param name="robot_name" type="str" value="$(arg my_name)"/>
-        <node name="segway_control" pkg="multi_agent_sim" type="segway_control.py"/>
+        <node name="localizer" pkg="multi_agent_sim" type="segway_localizer.py"/>
     </group>
 </launch>

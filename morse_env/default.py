@@ -31,9 +31,10 @@ class SegwayRMP9000(SegwayRMP400):
     def add_ros_streams(self):
         self.motion.add_stream('ros', topic="/{}/cmd_vel".format(self.name))
 
-        self.pose.add_stream('ros', topic="/{}/pose".format(self.name))
-        self.odometry.add_stream('ros', topic="/{}/odom".format(self.name))
         self.base_scan.add_stream('ros', topic="/{}/base_scan".format(self.name))
+        self.pose.add_stream('ros', topic='/{}/pose'.format(self.name))
+
+        self.odometry.add_stream('ros', frame_id='/odom_{}'.format(self.name), child_frame_id='/base_link_{}'.format(self.name))
 
 environments = {
     'grande_salle': {
