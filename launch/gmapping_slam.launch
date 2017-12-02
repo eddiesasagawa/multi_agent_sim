@@ -1,0 +1,21 @@
+<launch>
+    <arg name="my_name"/>
+
+    <group ns="$(arg my_name)">
+        <param name="robot_name" type="str" value="$(arg my_name)"/>
+        
+        <!-- GMAPPING mapping -->
+        <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
+            <param name="use_sim_time" value="true"/>
+
+            <!-- topic names -->
+            <remap from="scan" to="/$(arg my_name)/base_scan" />
+
+            <!-- frame names -->
+            <param name="map_frame" value="map_$(arg my_name)"/>
+            <param name="base_frame" value="base_link_$(arg my_name)"/>
+            <param name="odom_frame" value="odom_$(arg my_name)"/>
+            
+        </node>
+    </group>
+</launch>

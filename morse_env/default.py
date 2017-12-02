@@ -11,30 +11,30 @@ class SegwayRMP9000(SegwayRMP400):
         self.append(self.motion)
 
         ### Sensors ###
-        self.pose = Pose()
-        self.append(self.pose)
+        self.ground_truth_pose = Pose()
+        self.append(self.ground_truth_pose)
 
         # Odometry
         self.odometry = Odometry()
         self.append(self.odometry)
 
         # Base laser scanner
-        self.base_scan = Hokuyo()
+        self.base_scan = Hokuyo()   # default --> range: 30m, field: 270deg, 1080 sample points
         self.base_scan.translate(x=0.275, z=0.4)
         self.append(self.base_scan)
-        self.base_scan.properties(Visible_arc = True)
-        self.base_scan.properties(laser_range = 30.0)
-        self.base_scan.properties(resolution = 1.0)
-        self.base_scan.properties(scan_window = 180.0)
+        self.base_scan.properties(Visible_arc = False)
+        # self.base_scan.properties(laser_range = 30.0)
+        # self.base_scan.properties(resolution = 1.0)
+        # self.base_scan.properties(scan_window = 180.0)
         self.base_scan.create_laser_arc()
 
     def add_ros_streams(self):
         self.motion.add_stream('ros', topic="/{}/cmd_vel".format(self.name))
 
-        self.base_scan.add_stream('ros', topic="/{}/base_scan".format(self.name))
-        self.pose.add_stream('ros', topic='/{}/pose'.format(self.name))
+        self.base_scan.add_stream('ros', frame_id="/laser_link_{}".format(self.name), topic="/{}/base_scan".format(self.name))
+        self.ground_truth_pose.add_stream('ros', topic='/{}/pose_truth'.format(self.name))
 
-        self.odometry.add_stream('ros', frame_id='/odom_{}'.format(self.name), child_frame_id='/base_link_{}'.format(self.name))
+        self.odometry.add_stream('ros', frame_id='/odom_{}'.format(self.name), child_frame_id='/base_link_{}'.format(self.name), topic="/{}/odom".format(self.name))
 
 environments = {
     'grande_salle': {

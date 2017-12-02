@@ -8,4 +8,10 @@
     <include file="$(find multi_agent_sim)/launch/segway_localizer.launch">
         <arg name="my_name" value="$(arg robot_name)"/>
     </include>
+
+    <include file="$(find multi_agent_sim)/launch/gmapping_slam.launch">
+        <arg name="my_name" value="$(arg robot_name)"/>
+    </include>
+
+    <node pkg="rviz" type="rviz" name="sim_rviz" args="-d $(find multi_agent_sim)/rviz/sim_viz.rviz" />
 </launch>

@@ -3,6 +3,10 @@
 
     <group ns="$(arg my_name)">
         <param name="robot_name" type="str" value="$(arg my_name)"/>
-        <node name="localizer" pkg="multi_agent_sim" type="segway_localizer.py"/>
+        <!-- <node name="localizer" pkg="multi_agent_sim" type="segway_localizer.py" output="screen"/> -->
+
+        <arg name="base_link_name" value="base_link_$(arg my_name)"/>
+        <arg name="base_scan_name" value="laser_link_$(arg my_name)"/>
+        <node pkg="tf2_ros" type="static_transform_publisher" name="laser_link_broadcaster" args="0.275 0 0.4 0 0 0 1 $(arg base_link_name) $(arg base_scan_name)"/>
     </group>
 </launch>
