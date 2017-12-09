@@ -58,19 +58,13 @@ Visualization Manager:
       Frame Timeout: 15
       Frames:
         All Enabled: true
-        base_footprint_seggy1:
-          Value: true
         base_link_seggy1:
-          Value: true
-        base_stabilized_seggy1:
           Value: true
         laser_link_seggy1:
           Value: true
         map_seggy1:
           Value: true
         odom_seggy1:
-          Value: true
-        scanmatcher_frame:
           Value: true
       Marker Scale: 1
       Name: TF
@@ -80,13 +74,9 @@ Visualization Manager:
       Tree:
         map_seggy1:
           odom_seggy1:
-            base_footprint_seggy1:
-              base_stabilized_seggy1:
-                base_link_seggy1:
-                  laser_link_seggy1:
-                    {}
-          scanmatcher_frame:
-            {}
+            base_link_seggy1:
+              laser_link_seggy1:
+                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -132,7 +122,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: map_seggy1
+    Fixed Frame: base_link_seggy1
     Frame Rate: 30
   Name: root
   Tools:
@@ -152,26 +142,21 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Class: rviz/Orbit
-      Distance: 43.558712
+      Angle: 0
+      Class: rviz/TopDownOrtho
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.0599999987
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
-      Focal Point:
-        X: 5.3863368
-        Y: -3.12089562
-        Z: -1.60191786
-      Focal Shape Fixed Size: true
-      Focal Shape Size: 0.0500000007
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.00999999978
-      Pitch: 0.785398006
+      Scale: 33.699482
       Target Frame: <Fixed Frame>
-      Value: Orbit (rviz)
-      Yaw: 0.785398006
+      Value: TopDownOrtho (rviz)
+      X: 0
+      Y: 0
     Saved: ~
 Window Geometry:
   Displays:

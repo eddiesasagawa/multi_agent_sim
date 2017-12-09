@@ -1,3 +1,4 @@
+import os
 from morse.builder import *
 
 class SegwayRMP9000(SegwayRMP400):
@@ -51,11 +52,16 @@ environments = {
         'cam_rot': [1.0470, 0, 0.7854]
     },
 
-    
+    'arena': {
+        'path': '{}/arena.blend'.format(os.path.dirname(os.path.realpath(__file__))),
+        'robot_p0': [5.8, 3, 0.0],
+        'cam_pos': [3, -10, 30],
+        'cam_rot': [0.2, 0, 0.0]
+    }
 }
 
 def main():
-    env_choice = environments['grande_salle']
+    env_choice = environments['arena']
 
     r1 = SegwayRMP9000('seggy1', *(env_choice['robot_p0']))
     r1.add_ros_streams()

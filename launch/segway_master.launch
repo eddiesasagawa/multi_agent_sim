@@ -1,17 +1,42 @@
 <launch>
-    <arg name="robot_name" value="seggy1"/>
+    <arg name="my_name" value="seggy1"/>
+    <arg name="use_teleop" value="true"/>
 
-    <include file="$(find multi_agent_sim)/launch/segway_teleop.launch">
-        <arg name="my_name" value="$(arg robot_name)"/>
-    </include>
+    <group ns="$(arg my_name)">
+        <param name="robot_name" type="str" value="$(arg my_name)"/>
 
-    <include file="$(find multi_agent_sim)/launch/segway_localizer.launch">
-        <arg name="my_name" value="$(arg robot_name)"/>
-    </include>
+        <!-- Robot Control -->
+        <group if="$(arg use_teleop)">
+            <!-- Start Teleop node and suppress publishes from segway_control -->
+            <node name="segway_control" pkg="multi_agent_sim" type="segway_control.py" args="--no-pub"/>
+            <node name="teleop" pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py"/>
+        </group>
 
-    <include file="$(find multi_agent_sim)/launch/gmapping_slam.launch">
-        <arg name="my_name" value="$(arg robot_name)"/>
-    </include>
+        <group unless="$(arg use_teleop)">
+            <!-- Segway_control will control robot -->
+            <node name="segway_control" pkg="multi_agent_sim" type="segway_control.py"/>
+        </group>
+
+        <!-- Navigation -->
+        <!-- <node name="localizer" pkg="multi_agent_sim" type="segway_localizer.py" output="screen"/> -->
+        <node name="frontier_expansion" pkg="multi_agent_sim" type="frontier_expansion.py" output="screen"/>
+
+        <!-- Static Transforms -->
+        <arg name="base_link_name" value="base_link_$(arg my_name)"/>
+        <arg name="base_scan_name" value="laser_link_$(arg my_name)"/>
+        <node pkg="tf2_ros" type="static_transform_publisher" name="laser_link_broadcaster" args="0.275 0 0.4 0 0 0 1 $(arg base_link_name) $(arg base_scan_name)"/>
+
+        <!-- GMAPPING mapping -->
+        <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping">
+            <param name="use_sim_time" value="true"/>
+            <!-- topic names -->
+            <remap from="scan" to="/$(arg my_name)/base_scan" />
+            <!-- frame names -->
+            <param name="map_frame" value="map_$(arg my_name)"/>
+            <param name="base_frame" value="base_link_$(arg my_name)"/>
+            <param name="odom_frame" value="odom_$(arg my_name)"/>
+        </node>
+    </group>
 
     <node pkg="rviz" type="rviz" name="sim_rviz" args="-d $(find multi_agent_sim)/rviz/sim_viz.rviz" />
 </launch>
