@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   geometry_msgs
   nav_msgs
+  visualization_msgs
   teleop_twist_keyboard
   tf2
 )

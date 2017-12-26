@@ -1,8 +1,0 @@
-<launch>
-    <arg name="my_name"/>
-
-    <group ns="$(arg my_name)">
-        <param name="robot_name" type="str" value="$(arg my_name)"/>
-        <node name="segway_control" pkg="multi_agent_sim" type="segway_control.py"/>
-    </group>
-</launch>

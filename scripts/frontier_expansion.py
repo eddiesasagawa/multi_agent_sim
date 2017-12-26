@@ -1,7 +1,11 @@
 #!/usr/bin/env python
+import time
 import sys
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
+# import seaborn as sns
+
+import hdbscan
 
 import cv2
 import rospy
@@ -11,6 +15,7 @@ import tf2_ros
 
 from geometry_msgs.msg import Point, Pose, PoseStamped, Twist, TransformStamped, Quaternion
 from nav_msgs.msg import OccupancyGrid, MapMetaData
+from visualization_msgs.msg import Marker
 
 from abstractions.abstract_node import AbstractNode
 
@@ -22,47 +27,77 @@ class MapGrid2D(object):
 
 
     '''
-    def __init__(self):
+    def __init__(self, map_name):
+        self.name = map_name
         self.raw_msg    = OccupancyGrid()     # OccupancyGrid message goes here
         self.map_meta   = MapMetaData()     # MapMetaData
         self.map = np.array([])
         self.map_im = np.array([])
         self.roi = np.array([])
+        self.frontiers = []
+
         self.map_is_loaded = False
+
+        # ROI
         self.roi_origin = Pose()
         self.roi_max = Point()
         self.roi_min = Point()
 
+        # HDBSCAN
+        self.clusterer = hdbscan.HDBSCAN(min_cluster_size=50)
+
+        # parameters
         self.occupancy_thresh = 50 # % probability of occupancy before considering as occupied.
         self.map_roi_boundary = 5 # extra cells to keep around known map 
 
-        cv2.namedWindow('map_im', cv2.WINDOW_NORMAL)
+        # Plotting stuff
+        # sns.set_context('poster')
+        # sns.set_color_codes()
+        # main map window 
+        # cv2.namedWindow('map_im', cv2.WINDOW_NORMAL)
+        # auxiliary matplotlib plots
         # self.fig = plt.figure(1)
         # plt.ion()
+        # plt.grid()
         # plt.show()
 
-    def update(self, map_msg):
-        rospy.loginfo('update map')
-        self.raw_msg = map_msg
-        self.map_meta = map_msg.info
-        self.map = np.array(map_msg.data).reshape((map_msg.info.width, map_msg.info.height, 1))
+    def is_open_cell(self, c):
+        return c < 128
 
-        self.map[self.map == -1] = 50
-        self.map = self.map.astype(np.uint8)
-        cv2.normalize(self.map, dst = self.map, alpha = 0, beta = 255, norm_type=cv2.NORM_MINMAX)
+    def is_unknown_cell(self, c):
+        return c == 128
 
-        self.extract_map_roi()
-        self.find_frontiers()
+    def is_occupied_cell(self, c):
+        return c > 128
 
-        self.map_is_loaded = True
-        
-    def display(self):
+    def pos2cell(self, x, y):
         if self.map_is_loaded:
-            self.map_im = cv2.cvtColor(self.roi, cv2.COLOR_GRAY2BGR)
-            cv2.drawContours(self.map_im, [self.outline], 0, (0, 255, 0), 1)
-            self.map_im[self.frontiers > 0] = [0, 0, 255]
-            cv2.imshow('map_im', self.map_im)
-            cv2.waitKey(10)
+            x_col = int((x - self.roi_origin.position.x) / self.map_meta.resolution)
+            y_row = int((y - self.roi_origin.position.y) / self.map_meta.resolution)
+            return x_col, y_row
+        else:
+            return 0, 0
+
+    def cell2pos(self, row, col):
+        if self.map_is_loaded:
+            x = col*self.map_meta.resolution + self.roi_origin.position.x
+            y = row*self.map_meta.resolution + self.roi_origin.position.y
+            return x, y
+        else:
+            return 0, 0
+
+    def is_cell_possible_frontier(self, r, c):
+        '''
+        this function assumes that there is at least 1 cell in all directions at the given r(ow) c(olumn)
+        TODO: make this function work over the whole array somehow...
+        '''
+        if self.is_unknown_cell(self.roi[r, c]):
+            # get a grid of indexes around the point of interest
+            nx, ny = np.meshgrid([-1, 0, 1], [-1, 0, 1])
+
+            # if any of the 8 neighboring cells are open, this is a potential frontier
+            return 255 if np.any(self.is_open_cell(self.roi[nx+r, ny+c])) else 0
+        return 0
 
     def extract_map_roi(self):
         # find map contour to zoom in on only region of interest
@@ -87,49 +122,17 @@ class MapGrid2D(object):
 
         # get new map parameters
         self.roi = self.map[self.roi_min.y:self.roi_max.y, self.roi_min.x:self.roi_max.x]
-        self.roi_origin.position.x = self.roi_min.x - self.map_meta.origin.position.x
-        self.roi_origin.position.y = self.roi_min.y - self.map_meta.origin.position.y
+        self.roi_origin.position.x = (self.roi_min.x * self.map_meta.resolution) + self.map_meta.origin.position.x
+        self.roi_origin.position.y = (self.roi_min.y * self.map_meta.resolution) + self.map_meta.origin.position.y
         self.roi_origin.orientation.x = self.map_meta.origin.orientation.x
         self.roi_origin.orientation.y = self.map_meta.origin.orientation.y
         self.roi_origin.orientation.z = self.map_meta.origin.orientation.z
         self.roi_origin.orientation.w = self.map_meta.origin.orientation.w
+        rospy.loginfo('Map Origin: ({}, {}), ROI origin: ({}, {})'.format(self.map_meta.origin.position.x, self.map_meta.origin.position.y, self.roi_origin.position.x, self.roi_origin.position.y))
 
         #convert contours to ROI
         self.outline[:, :, 0] = self.outline[:, :, 0] - self.roi_min.x
         self.outline[:, :, 1] = self.outline[:, :, 1] - self.roi_min.y
-
-    def is_open_cell(self, c):
-        return c < 128
-
-    def is_unknown_cell(self, c):
-        return c == 128
-
-    def is_occupied_cell(self, c):
-        return c > 128
-
-    def pos2cell(self, x, y):
-        if self.map_is_loaded:
-            x_col = int((x - self.roi_origin.position.x) / self.map_meta.resolution)
-            y_row = int((y - self.roi_origin.position.y) / self.map_meta.resolution)
-            return x_col, y_row
-        else:
-            return 0, 0
-
-    def cell2pos(self, row, col):
-        pass
-
-    def is_cell_possible_frontier(self, r, c):
-        '''
-        this function assumes that there is at least 1 cell in all directions at the given r(ow) c(olumn)
-        TODO: make this function work over the whole array somehow...
-        '''
-        if self.is_unknown_cell(self.roi[r, c]):
-            # get a grid of indexes around the point of interest
-            nx, ny = np.meshgrid([-1, 0, 1], [-1, 0, 1])
-
-            # if any of the 8 neighboring cells are open, this is a potential frontier
-            return 255 if np.any(self.is_open_cell(self.roi[nx+r, ny+c])) else 0
-        return 0
 
     def find_frontiers(self):
         ### first go through the ROI and identify possible frontier cells
@@ -143,26 +146,77 @@ class MapGrid2D(object):
         raw_frontiers = cv2.filter2D(cpy, -1, np.ones((3,3)), cv2.BORDER_REPLICATE)
         # use the original as a mask to get values for only unknown cells
         ret, mask = cv2.threshold(cpy, 0, 255, cv2.THRESH_BINARY_INV)
-        self.frontiers = cv2.bitwise_and(raw_frontiers, raw_frontiers, mask=mask)
+        self.frontier_mask = cv2.bitwise_and(raw_frontiers, raw_frontiers, mask=mask)
         # since kernel is just 3x3, a pixel is next to empty cell if lower nibble is >0
-        self.frontiers = cv2.bitwise_and(self.frontiers, 0x0F)
+        self.frontier_mask = cv2.bitwise_and(self.frontier_mask, 0x0F)
+        self.frontier_mask[self.frontier_mask > 0] = 255 # make it binary
 
+        ### Group frontier cells
+        self.frontier_pts = np.transpose(np.nonzero(self.frontier_mask))
+        # Run HDBSCAN to do cluster analysis
+        self.clusterer.fit(self.frontier_pts)
+        rospy.loginfo('clustered: {}'.format(self.clusterer.labels_.max()+1))
+        self.clusters = [self.frontier_pts[self.clusterer.labels_ == c] for c in range(self.clusterer.labels_.max()+1)]
+        self.frontiers = [{'mean': np.mean(cluster, axis=0).astype(int), 'std': np.std(cluster, axis=0).astype(int), 'count': cluster.shape[0]} for cluster in self.clusters]
 
-        # get a grid of indices of the ROI (ignore the outermost edges)
-        # rospy.loginfo('start search {}'.format(self.roi.shape))
-        # xx, yy = np.meshgrid(np.arange(1, self.roi.shape[0]-1), np.arange(1, self.roi.shape[1]-1))
-        # rospy.loginfo('sizes: {}, {}'.format(xx.shape, yy.shape))
-        # self.frontiers = np.vectorize(self.is_cell_possible_frontier)(xx, yy)
-        # rospy.loginfo('found frontiers')
+    @property
+    def markers(self):
+        '''
+        This property creates a Marker message with Sphere List for all detected frontiers.
+        Since this is mostly just for visualization (?), I went with Sphere List instead of a MarkerArray
+        '''
+        marker = Marker()
+        marker.header.frame_id = self.name
+        marker.header.stamp = self.map_meta.map_load_time
+        marker.ns = self.name + '_frontiers'
+        marker.id = 0
+        marker.frame_locked = True
+        marker.type = marker.SPHERE_LIST
+        marker.action = marker.ADD
 
-        ### group the frontier cells into regions
+        positions = [self.cell2pos(f['mean'][0], f['mean'][1]) for f in self.frontiers]
+        marker.points = [Point(x=x, y=y) for x, y in positions]
 
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 0.5
+        marker.scale.y = 0.5
+        marker.scale.z = 0.1
+        marker.color.a = 0.5
+        marker.color.b = 1.0
 
-        ### filter based on width of regions (make sure robot can get through it)
+        marker.lifetime = rospy.Duration()
+        return marker
 
+    def update(self, map_msg):
+        rospy.loginfo('update map')
+        self.raw_msg = map_msg
+        self.map_meta = map_msg.info
+        self.map = np.array(map_msg.data).reshape((map_msg.info.width, map_msg.info.height, 1))
 
-        
-    
+        self.map[self.map == -1] = 50
+        self.map = self.map.astype(np.uint8)
+        cv2.normalize(self.map, dst = self.map, alpha = 0, beta = 255, norm_type=cv2.NORM_MINMAX)
+
+        t_1 = time.time()
+        self.extract_map_roi()
+        t_2 = time.time()
+        self.find_frontiers()
+        t_3 = time.time()
+
+        rospy.loginfo("\n\rMap: extract={} s, find={} s".format(t_2-t_1, t_3-t_2))
+        self.map_is_loaded = True
+
+    def display(self):
+        if self.map_is_loaded:
+            self.map_im = cv2.cvtColor(self.roi, cv2.COLOR_GRAY2BGR)
+            # cv2.drawContours(self.map_im, [self.outline], 0, (0, 255, 0), 1)
+            self.map_im[self.frontier_mask > 0] = [0, 0, 255]
+
+            for frontier in self.frontiers:
+                self.map_im = cv2.ellipse(self.map_im, tuple(frontier['mean'][::-1]), tuple(frontier['std'][::-1]), 0.0, 0.0, 360.0, (0, 255, 0))
+
+            cv2.imshow('map_im', self.map_im)
+            cv2.waitKey(10)
 
 class FrontierExpander(AbstractNode):
     def __init__(self):
@@ -170,27 +224,27 @@ class FrontierExpander(AbstractNode):
 
         self.robot_name = rospy.get_param('robot_name')
 
-        self.tf_broadcaster = tf2_ros.TransformBroadcaster()
-        self.tf_buffer = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
-
-        self.map_grid = MapGrid2D()
-
         self.frame_baselink = 'base_link_{}'.format(self.robot_name)
         self.frame_odom = 'odom_{}'.format(self.robot_name)
         self.frame_map = 'map_{}'.format(self.robot_name)
 
-        self.map_sub = rospy.Subscriber('map', OccupancyGrid, self.callback_map)
+        self.map_grid = MapGrid2D(self.frame_map)
 
-        self.rate = rospy.Rate(1) #Hz
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
+        self.map_sub = rospy.Subscriber('map', OccupancyGrid, self.callback_map)
+        self.frontier_pub = rospy.Publisher('frontiers', Marker, queue_size=10, latch=True)
+
+        self.rate = rospy.Rate(2) #Hz
 
     def callback_map(self, msg):
         self.map_grid.update(msg)
+        self.frontier_pub.publish(self.map_grid.markers)
 
     def spin(self):
         try:
             while not rospy.is_shutdown():
-                self.map_grid.display()
+                # self.map_grid.display()
                 self.rate.sleep()
 
         except rospy.ROSInterruptException:
