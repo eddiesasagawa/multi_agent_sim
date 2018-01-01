@@ -19,6 +19,8 @@ from visualization_msgs.msg import Marker
 
 from abstractions.abstract_node import AbstractNode
 
+from multi_agent_sim.srv import *
+
 class MapGrid2D(object):
     '''
     From nav_msgs/OccupancyGrid message:
@@ -205,6 +207,14 @@ class MapGrid2D(object):
 
         rospy.loginfo("\n\rMap: extract={} s, find={} s".format(t_2-t_1, t_3-t_2))
         self.map_is_loaded = True
+
+    def find_path(self, start, goal):
+        '''
+        Uses a Path Finder to figure out a path from start to goal.
+
+        Currently just uses the given map so there will be alot of points...
+        '''
+        pass
 
     def display(self):
         if self.map_is_loaded:
