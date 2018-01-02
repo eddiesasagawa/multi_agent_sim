@@ -67,6 +67,18 @@ class PathFinderAbstract(object):
         '''
         return []
 
+    def extract_path(self, goal, came_from, cost_so_far):
+        if goal not in came_from:
+            return []
+
+        path = [goal]
+        prev = came_from[goal]
+        while prev is not None:
+            path.append(tuple(prev))
+            prev = came_from[prev]
+
+        return path[::-1], came_from, cost_so_far
+
 class PathFinderAStar(PathFinderAbstract):
     '''
     A* implementation of path finding.
@@ -99,9 +111,6 @@ class PathFinderAStar(PathFinderAbstract):
             current = self.frontiers.get()
             # for current_f, current in self.frontiers.queue:
             if current == goal:
-                path_found = True
-
-            if path_found:
                 break
 
             neighbors = self.graph.neighbors(current)
@@ -117,13 +126,7 @@ class PathFinderAStar(PathFinderAbstract):
                     self.frontiers.put(nbr, f)
                     came_from[nbr] = current
 
-        if path_found:
-            prev = came_from[goal]
-            while prev is not None:
-                path.append(tuple(prev))
-                prev = came_from[prev]
-
-        return path[::-1], came_from, cost_so_far
+        return self.extract_path(goal, came_from, cost_so_far)
 
 class PathFinderJPS(PathFinderAbstract):
     '''
@@ -133,6 +136,16 @@ class PathFinderJPS(PathFinderAbstract):
     '''
     NAME = "A* + JPS"
 
+    class JumpPointResult(object):
+        def __init__(self, loc=None, cost=None, directions=[], prev_loc=None):
+            self.location = loc
+            self.prev_loc = prev_loc
+            self.cost = cost
+            self.directions = directions
+
+        def __repr__(self):
+            return "JumpPointResult: {}, {}, {}".format(self.location, self.cost, self.directions)
+
     def __init__(self, grid_map, weight_map=None):
         '''
         Current implementation is such that this class is to be instantiated at every new search
@@ -140,6 +153,20 @@ class PathFinderJPS(PathFinderAbstract):
         self.graph = SquareGrid(grid_map, weight_map)
         self.frontiers = FastPriorityQueue()
         self.set_goal = (0, 0)
+        self.cardinal_directions = [
+            (1, 0),
+            (-1, 0),
+            (0, 1),
+            (0, -1)
+        ]
+        self.diagonal_directions = [
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1)
+        ]
+        self.jumped_from = {}
+        self.cost_so_far = {}
 
     def __call__(self, start, goal):
         '''
@@ -148,12 +175,15 @@ class PathFinderJPS(PathFinderAbstract):
         self.frontiers.flush()
         self.frontiers.put(start, 0)
         self.set_goal = goal # set goal up for recursive searches to use
-        came_from = {}
-        cost_so_far = {}
-        came_from[start] = None
-        cost_so_far[start] = 0
+        self.jumped_from = {}
+        self.cost_so_far = {}
+        directions_to_check = {}
         path = []
         path_found = False
+
+        self.jumped_from[start] = None
+        self.cost_so_far[start] = 0
+        directions_to_check[start] = self.cardinal_directions + self.diagonal_directions
 
         while not self.frontiers.empty():
             current = self.frontiers.get()
@@ -161,60 +191,82 @@ class PathFinderJPS(PathFinderAbstract):
                 path_found = True
                 break
 
-            
+            (x, y) = current
 
+            # find all valid directions to check (ie, not an obstacle)
+            cardinal_dirs_to_check = [d for d in self.cardinal_directions if (self.graph.is_traversable((x+d[0], y+d[1])) and d in directions_to_check[current])]
+            diagonal_dirs_to_check = [d for d in self.diagonal_directions if (self.graph.is_traversable((x+d[0], y+d[1])) and d in directions_to_check[current])]
 
-    def find_jump_point(self, loc):
+            jp_list = [
+                self.search_cardinal_jump_point((x+dir_vec[0],y+dir_vec[1]), self.cost_so_far[current]+1, dir_vec, current) for dir_vec in cardinal_dirs_to_check
+            ] 
+            for dir_vec in diagonal_dirs_to_check:
+                jp_list.extend(self.search_diagonal_jump_point((x+dir_vec[0],y+dir_vec[1]), self.cost_so_far[current]+1, dir_vec, current))
+
+            print('processed {} -> cdir: {}, ddir: {}, jp list: {}'.format(current, cardinal_dirs_to_check, diagonal_dirs_to_check, jp_list))
+            # process all found jump points
+            for jp in jp_list:
+                if (jp.location is not None) and (jp.location not in self.cost_so_far or jp.cost < self.cost_so_far[jp.location]):
+                    self.cost_so_far[jp.location] = jp.cost
+                    self.jumped_from[jp.location] = jp.prev_loc
+                    directions_to_check[jp.location] = jp.directions
+
+                    f = jp.cost + self.graph.manhattan_distance(jp.location, goal)
+                    self.frontiers.put(jp.location, f)
+
+        return self.extract_path(goal, self.jumped_from, self.cost_so_far)
+
+    def search_cardinal_jump_point(self, start_loc, start_cost, dir_vec, source_loc):
         '''
-        Recursive function intended to prune the indicated location's neighbors.
-
-        First apply straight pruning rule in vertical and horizontal directions
-        Then apply diagonal pruning rule if jump point not found.
-        '''
-        pass
-
-    def recursive_jps_cardinal(self, loc, loc_g, dir_vec):
-        '''
-        straight pruning rule
+        Apply straight pruning rule along a cardinal direction
         dir_vec should be a 2-element vector in the set {-1, 0, 1} and point N/S/E/W (i.e., 1 element is 0)
+
+        @return a tuple of (jump_point, cost_to_jump_point, [directions_of_interest_from_this_jump_point])
         '''
-        (x, y) = loc
+        (x0, y0) = start_loc
         (dx, dy) = dir_vec
 
-        # check for any forced neighbors
-        # just need to check the two cells orthogonal to dir_vec:
-        #  |   | x |   |        |   | v |   |
-        #   --- --- ---          --- -+- ---
-        #  | v +>  |   |   OR   | x | v | x |
-        #   --- --- ---          --- --- ---
-        #  |   | x |   |        |   |   |   |
-        #
-        # where center cell is cell being checked, v is the cell we came from, and x marks the two cells
-        # that should be checked for obstacles.
-        # Note that due to symmetry, it doesn't matter whether the vector is up/down or left/right
-        # Also, since this function is limited to horizontal and vertical unit vectors, one element will be +/- 1 while
-        # the other is going to 0
-        forced_nbrs_dirs = []
-        if (not self.graph.is_unoccupied((x+dy, y+dx))) and self.graph.is_unoccupied((x+dx+dy, y+dy+dx)):
-            forced_nbrs_dirs.append((dx+dy, dy+dx))
-        if (not self.graph.is_unoccupied((x-dy, y-dx))) and self.graph.is_unoccupied((x+dx-dy, y+dy-dx)):
-            forced_nbrs_dirs.append((dx-dy, dy-dx))
+        x = x0
+        y = y0
+        cost = start_cost
 
-        # Exit conditions
-        if forced_nbrs_dirs:
-            # found a forced neighbor, so return this node with its cost and the directions of the forced neighbors
-            return loc, loc_g, forced_nbrs_dirs
-        elif (x+dx, y+dy) == self.set_goal:
-            # found the goal, but just stick it on the stack for proper processing (should I?)
-            return loc, loc_g, [dir_vec]
-        elif self.graph.is_traversable((x+dx, y+dy)):
-            # next node in straight line is valid, so recurse into it
-            return self.recursive_jps_cardinal((x+dx, y+dy), loc_g+1, dir_vec)
-        else:
-            # hit a wall, so return empty
-            return None, None, []
+        while True:
+            # quick goal check
+            if (x,y) == self.set_goal:
+                return self.JumpPointResult((x,y), cost, [dir_vec], source_loc)
+            elif not self.graph.is_traversable((x,y)):
+                return self.JumpPointResult(None, None, [dir_vec], None)
 
-    def recursive_jps_diagonal(self, loc, loc_g, dir_vec):
+            # check for any forced neighbors
+            # just need to check the two cells orthogonal to dir_vec:
+            #  |   | x |   |        |   | v |   |
+            #   --- --- ---          --- -+- ---
+            #  | v +>  |   |   OR   | x | v | x |
+            #   --- --- ---          --- --- ---
+            #  |   | x |   |        |   |   |   |
+            #
+            # where center cell is cell being checked, v is the cell we came from, and x marks the two cells
+            # that should be checked for obstacles.
+            # Note that due to symmetry, it doesn't matter whether the vector is up/down or left/right
+            # Also, since this function is limited to horizontal and vertical unit vectors, one element will be +/- 1 while
+            # the other is going to 0
+            forced_nbrs_dirs = []
+            if (not self.graph.is_traversable((x+dy, y+dx))) and self.graph.is_traversable((x+dx+dy, y+dy+dx)):
+                forced_nbrs_dirs.append((dx+dy, dy+dx))
+            if (not self.graph.is_traversable((x-dy, y-dx))) and self.graph.is_traversable((x+dx-dy, y+dy-dx)):
+                forced_nbrs_dirs.append((dx-dy, dy-dx))
+
+            # Exit conditions
+            if forced_nbrs_dirs:
+                # found a forced neighbor, so return this node with its cost and the directions of the forced neighbors
+                return self.JumpPointResult((x,y), cost, forced_nbrs_dirs, source_loc)
+            else:
+                # keep going
+                x = x+dx
+                y = y+dy
+                cost += 1
+
+    def search_diagonal_jump_point(self, start_loc, start_cost, dir_vec, source_loc):
         '''
         diagonal pruning rule
         dir_vec should be a 2-element vector in the set {-1, 1}, and point to any of the four corners
@@ -237,32 +289,40 @@ class PathFinderJPS(PathFinderAbstract):
 
         @return list of tuples containing jump points (if any). Each tuple contains (location, location_cost, list of direction vectors to take)
         '''
-        (x, y) = loc
+        (x0, y0) = start_loc
         (dx, dy) = dir_vec
-        jump_points = []
+        
+        x = x0
+        y = y0
+        cost = start_cost
 
-        # check horizontal direction first
-        horiz_jp = self.recursive_jps_cardinal((x+dx, y), loc_g+1, (dx, 0))
+        while True:
+            # quick goal check
+            if (x,y) == self.set_goal:
+                return [self.JumpPointResult((x,y), cost, [dir_vec], source_loc)]
+            elif not self.graph.is_traversable((x,y)):
+                return []
 
-        # check vertical
-        vert_jp = self.recursive_jps_cardinal((x, y+dy), loc_g+1, (0, dy))
+            jump_points = []
+            # check horizontal direction first
+            horiz_jp = self.search_cardinal_jump_point((x+dx, y), cost+1, (dx, 0), (x,y))
+            if horiz_jp.location is not None:
+                jump_points.append(horiz_jp)
 
-        if horiz_jp is not None:
-            jump_points.append(horiz_jp)
-        if vert_jp is not None:
-            jump_points.append(vert_jp)
+            # check vertical
+            vert_jp = self.search_cardinal_jump_point((x, y+dy), cost+1, (0, dy), (x,y))
+            if vert_jp.location is not None:
+                jump_points.append(vert_jp)
 
-        # Exit conditions
-        if jump_points or (x+dx, y+dy) == self.set_goal:
-            # found either jump points or the goal
-            jump_points.append((loc, loc_g, [dir_vec]))
-            return jump_points
-        elif self.graph.is_traversable((x+dx, y+dy)):
-            # no jump points detected, so move to next in diagonal
-            return self.recursive_jps_diagonal((x+dx, y+dy), loc_g+1, dir_vec)
-        else:
-            # hit a wall, so return empty
-            return []
+            # Exit conditions
+            if jump_points:
+                # found either jump points or the goal
+                jump_points.append(self.JumpPointResult((x, y), cost, [dir_vec], source_loc))
+                return jump_points
+            else:
+                x = x+dx
+                y = y+dy
+                cost += 1
 
 
 class PathFinderRRT(PathFinderAbstract):

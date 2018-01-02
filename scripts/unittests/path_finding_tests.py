@@ -1,6 +1,6 @@
 import numpy as np
 from scripts.support.graphs import SquareGrid
-from scripts.support.path_finder import PathFinderAStar
+from scripts.support.path_finder import PathFinderAStar, PathFinderJPS
 
 def draw_grid(graph, start, goal, path=[], costs=[], point_to=[], spacing=2):
     '''
@@ -78,7 +78,7 @@ def red_blob_test():
     print(test_grid.weights)
 
     for start, goal in test_sets:
-        evaluate(PathFinderAStar, test_grid, start, goal)
+        evaluate(PathFinderJPS, test_grid, start, goal)
 
 if __name__ == "__main__":
     red_blob_test()

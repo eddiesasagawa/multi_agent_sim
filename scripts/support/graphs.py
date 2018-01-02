@@ -32,6 +32,7 @@ class SquareGrid(Graph):
         if grid_map.shape[:2] != weight_map.shape[:2]:
             raise ValueError("Grid map shape of {} does not match weight map shape of {}".format(grid_map.shape, weight_map.shape))
         self.height, self.width = grid_map.shape[:2]
+        self.y_off = self.height - 1
         self.map = grid_map.copy()
         self.map[self.map < self.map_occupied] = self.map_traversable
         
@@ -48,10 +49,11 @@ class SquareGrid(Graph):
         return math.sqrt((x2-x1)**2 + (y2-y1)**2)
 
     def is_in_bounds(self, loc):
-        return (0,0) <= loc < (self.width, self.height)
+        (x, y) = loc
+        return 0 <= x < self.width and 0 <= y < self.height
     
     def is_unoccupied(self, loc):
-        return self.map[y, x] == self.map_traversable
+        return self.map[loc[1], loc[0]] == self.map_traversable
 
     def is_traversable(self, loc):
         return self.is_in_bounds(loc) and self.is_unoccupied(loc)
