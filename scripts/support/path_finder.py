@@ -54,7 +54,7 @@ class PathFinderAbstract(object):
     Implements a Path Finding algorithm to get from A to B given a map
     The map should be a discretized map with 0 for (potentially) traversable cells and 0xFF for walls
 
-    Any constraints on nearness to an obstacle should already be applied to the map before passing to this
+    Any constraints on nearness to an obstacle should alreadj be applied to the map before passing to this
     '''
     NAME = "Abstract"
     def __init__(self):
@@ -137,6 +137,9 @@ class PathFinderJPS(PathFinderAbstract):
     NAME = "A* + JPS"
 
     class JumpPointResult(object):
+        '''
+        A little helper class to hold jump point information
+        '''
         def __init__(self, loc=None, cost=None, directions=[], prev_loc=None):
             self.location = loc
             self.prev_loc = prev_loc
@@ -191,17 +194,17 @@ class PathFinderJPS(PathFinderAbstract):
                 path_found = True
                 break
 
-            (x, y) = current
+            (i, j) = current
 
             # find all valid directions to check (ie, not an obstacle)
-            cardinal_dirs_to_check = [d for d in self.cardinal_directions if (self.graph.is_traversable((x+d[0], y+d[1])) and d in directions_to_check[current])]
-            diagonal_dirs_to_check = [d for d in self.diagonal_directions if (self.graph.is_traversable((x+d[0], y+d[1])) and d in directions_to_check[current])]
+            cardinal_dirs_to_check = [d for d in self.cardinal_directions if (self.graph.is_traversable((i+d[0], j+d[1])) and d in directions_to_check[current])]
+            diagonal_dirs_to_check = [d for d in self.diagonal_directions if (self.graph.is_traversable((i+d[0], j+d[1])) and d in directions_to_check[current])]
 
             jp_list = [
-                self.search_cardinal_jump_point((x+dir_vec[0],y+dir_vec[1]), self.cost_so_far[current]+1, dir_vec, current) for dir_vec in cardinal_dirs_to_check
+                self.search_cardinal_jump_point((i+dir_vec[0],j+dir_vec[1]), self.cost_so_far[current]+1, dir_vec, current) for dir_vec in cardinal_dirs_to_check
             ] 
             for dir_vec in diagonal_dirs_to_check:
-                jp_list.extend(self.search_diagonal_jump_point((x+dir_vec[0],y+dir_vec[1]), self.cost_so_far[current]+1, dir_vec, current))
+                jp_list.extend(self.search_diagonal_jump_point((i+dir_vec[0],j+dir_vec[1]), self.cost_so_far[current]+1, dir_vec, current))
 
             print('processed {} -> cdir: {}, ddir: {}, jp list: {}'.format(current, cardinal_dirs_to_check, diagonal_dirs_to_check, jp_list))
             # process all found jump points
@@ -223,47 +226,47 @@ class PathFinderJPS(PathFinderAbstract):
 
         @return a tuple of (jump_point, cost_to_jump_point, [directions_of_interest_from_this_jump_point])
         '''
-        (x0, y0) = start_loc
-        (dx, dy) = dir_vec
+        (i0, j0) = start_loc
+        (di, dj) = dir_vec
 
-        x = x0
-        y = y0
+        i = i0
+        j = j0
         cost = start_cost
 
         while True:
             # quick goal check
-            if (x,y) == self.set_goal:
-                return self.JumpPointResult((x,y), cost, [dir_vec], source_loc)
-            elif not self.graph.is_traversable((x,y)):
+            if (i,j) == self.set_goal:
+                return self.JumpPointResult((i,j), cost, [dir_vec], source_loc)
+            elif not self.graph.is_traversable((i,j)):
                 return self.JumpPointResult(None, None, [dir_vec], None)
 
             # check for any forced neighbors
             # just need to check the two cells orthogonal to dir_vec:
-            #  |   | x |   |        |   | v |   |
+            #  |   | i |   |        |   | v |   |
             #   --- --- ---          --- -+- ---
-            #  | v +>  |   |   OR   | x | v | x |
+            #  | v +>  |   |   OR   | i | v | i |
             #   --- --- ---          --- --- ---
-            #  |   | x |   |        |   |   |   |
+            #  |   | i |   |        |   |   |   |
             #
-            # where center cell is cell being checked, v is the cell we came from, and x marks the two cells
+            # where center cell is cell being checked, v is the cell we came from, and i marks the two cells
             # that should be checked for obstacles.
             # Note that due to symmetry, it doesn't matter whether the vector is up/down or left/right
             # Also, since this function is limited to horizontal and vertical unit vectors, one element will be +/- 1 while
             # the other is going to 0
             forced_nbrs_dirs = []
-            if (not self.graph.is_traversable((x+dy, y+dx))) and self.graph.is_traversable((x+dx+dy, y+dy+dx)):
-                forced_nbrs_dirs.append((dx+dy, dy+dx))
-            if (not self.graph.is_traversable((x-dy, y-dx))) and self.graph.is_traversable((x+dx-dy, y+dy-dx)):
-                forced_nbrs_dirs.append((dx-dy, dy-dx))
+            if (not self.graph.is_traversable((i+dj, j+di))) and self.graph.is_traversable((i+di+dj, j+dj+di)):
+                forced_nbrs_dirs.append((di+dj, dj+di))
+            if (not self.graph.is_traversable((i-dj, j-di))) and self.graph.is_traversable((i+di-dj, j+dj-di)):
+                forced_nbrs_dirs.append((di-dj, dj-di))
 
             # Exit conditions
             if forced_nbrs_dirs:
                 # found a forced neighbor, so return this node with its cost and the directions of the forced neighbors
-                return self.JumpPointResult((x,y), cost, forced_nbrs_dirs, source_loc)
+                return self.JumpPointResult((i,j), cost, forced_nbrs_dirs, source_loc)
             else:
                 # keep going
-                x = x+dx
-                y = y+dy
+                i = i+di
+                j = j+dj
                 cost += 1
 
     def search_diagonal_jump_point(self, start_loc, start_cost, dir_vec, source_loc):
@@ -285,43 +288,43 @@ class PathFinderJPS(PathFinderAbstract):
         horizontal dir = (1, 0)                     horizontal dir = (1, 0)
         vertical dir = (0, 1)                       vertical dir = (0, -1)
 
-        So when checking cardinal directions, just take individual components of (dx, 0), (0, dy)
+        So when checking cardinal directions, just take individual components of (di, 0), (0, dj)
 
         @return list of tuples containing jump points (if any). Each tuple contains (location, location_cost, list of direction vectors to take)
         '''
-        (x0, y0) = start_loc
-        (dx, dy) = dir_vec
+        (i0, j0) = start_loc
+        (di, dj) = dir_vec
         
-        x = x0
-        y = y0
+        i = i0
+        j = j0
         cost = start_cost
 
         while True:
             # quick goal check
-            if (x,y) == self.set_goal:
-                return [self.JumpPointResult((x,y), cost, [dir_vec], source_loc)]
-            elif not self.graph.is_traversable((x,y)):
+            if (i,j) == self.set_goal:
+                return [self.JumpPointResult((i,j), cost, [dir_vec], source_loc)]
+            elif not self.graph.is_traversable((i,j)):
                 return []
 
             jump_points = []
             # check horizontal direction first
-            horiz_jp = self.search_cardinal_jump_point((x+dx, y), cost+1, (dx, 0), (x,y))
+            horiz_jp = self.search_cardinal_jump_point((i+di, j), cost+1, (di, 0), (i,j))
             if horiz_jp.location is not None:
                 jump_points.append(horiz_jp)
 
             # check vertical
-            vert_jp = self.search_cardinal_jump_point((x, y+dy), cost+1, (0, dy), (x,y))
+            vert_jp = self.search_cardinal_jump_point((i, j+dj), cost+1, (0, dj), (i,j))
             if vert_jp.location is not None:
                 jump_points.append(vert_jp)
 
             # Exit conditions
             if jump_points:
                 # found either jump points or the goal
-                jump_points.append(self.JumpPointResult((x, y), cost, [dir_vec], source_loc))
+                jump_points.append(self.JumpPointResult((i, j), cost, [dir_vec], source_loc))
                 return jump_points
             else:
-                x = x+dx
-                y = y+dy
+                i = i+di
+                j = j+dj
                 cost += 1
 
 

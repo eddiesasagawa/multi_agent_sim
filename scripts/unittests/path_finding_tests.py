@@ -7,18 +7,18 @@ def draw_grid(graph, start, goal, path=[], costs=[], point_to=[], spacing=2):
     graph should be of SquareGrid type
     path is a list of locations comprise the path
     '''
-    locations = [[(x, y) for x in range(graph.width)] for y in range(graph.height)]
+    locations = [[(i, j) for j in range(graph.width)] for i in range(graph.height)]
     print(''.join(['-']*(graph.width*spacing)))
     for row in locations:
         row_disp = [
             "A" if loc == start else
             "Z" if loc == goal else
             "@" if loc in path else
-            ">" if loc in point_to and point_to[loc][0] == loc[0]+1 else
-            "<" if loc in point_to and point_to[loc][0] == loc[0]-1 else
-            "v" if loc in point_to and point_to[loc][1] == loc[1]+1 else
-            "^" if loc in point_to and point_to[loc][1] == loc[1]-1 else
-            "#" if graph.map[loc[1], loc[0]] == graph.map_occupied else
+            "v" if loc in point_to and point_to[loc][0] == loc[0]+1 else
+            "^" if loc in point_to and point_to[loc][0] == loc[0]-1 else
+            ">" if loc in point_to and point_to[loc][1] == loc[1]+1 else
+            "<" if loc in point_to and point_to[loc][1] == loc[1]-1 else
+            "#" if graph.map[*loc] == graph.map_occupied else
             "."
             for loc in row
         ]
@@ -32,7 +32,7 @@ def draw_grid(graph, start, goal, path=[], costs=[], point_to=[], spacing=2):
                 "  A" if loc == start else
                 "  Z" if loc == goal else
                 "{:3}".format(int(costs[loc])) if loc in costs else
-                "  #" if graph.map[loc[1], loc[0]] == graph.map_occupied else
+                "  #" if graph.map[*loc] == graph.map_occupied else
                 "  ."
                 for loc in row
             ]

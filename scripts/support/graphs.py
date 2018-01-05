@@ -39,38 +39,38 @@ class SquareGrid(Graph):
         self.weights = weight_map.copy()
 
     def manhattan_distance(self, p1, p2):
-        (x1, y1) = p1
-        (x2, y2) = p2
-        return abs(x2-x1) + abs(y2-y1)
+        (i1, j1) = p1
+        (i2, j2) = p2
+        return abs(i2-i1) + abs(j2-j1)
 
     def euclidean_distance(self, p1, p2):
-        (x1, y1) = p1
-        (x2, y2) = p2
-        return math.sqrt((x2-x1)**2 + (y2-y1)**2)
+        (i1, j1) = p1
+        (i2, j2) = p2
+        return math.sqrt((i2-i1)**2 + (j2-j1)**2)
 
     def is_in_bounds(self, loc):
-        (x, y) = loc
-        return 0 <= x < self.width and 0 <= y < self.height
+        (i, j) = loc
+        return 0 <= j < self.width and 0 <= i < self.height
     
     def is_unoccupied(self, loc):
-        return self.map[loc[1], loc[0]] == self.map_traversable
+        return self.map[*loc] == self.map_traversable
 
     def is_traversable(self, loc):
         return self.is_in_bounds(loc) and self.is_unoccupied(loc)
 
     def neighbors(self, loc):
-        (x, y) = loc
+        (i, j) = loc
         nbrs = [
             # just construct it manually since it is only 8 neighbors (diagonals too)
             # list the 4 cardinal directions before diagonals
-            (x-1, y),
-            (x,   y-1),
-            (x,   y+1),
-            (x+1, y),
-            (x-1, y-1),
-            (x-1, y+1),
-            (x+1, y-1),
-            (x+1, y+1)
+            (i-1, j),
+            (i,   j-1),
+            (i,   j+1),
+            (i+1, j),
+            (i-1, j-1),
+            (i-1, j+1),
+            (i+1, j-1),
+            (i+1, j+1)
         ]
         nbrs = filter(self.is_traversable, nbrs)
         return nbrs
@@ -81,5 +81,5 @@ class SquareGrid(Graph):
         For now, this is only dependent on the destination, and is simply 1
         Since the map contains values between 0 and 255, we can scale the values as weights
         '''
-        return self.weights[dest[1],dest[0]]
+        return self.weights[*dest]
 

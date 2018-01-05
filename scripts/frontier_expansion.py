@@ -14,10 +14,11 @@ import tf
 import tf2_ros
 
 from geometry_msgs.msg import Point, Pose, PoseStamped, Twist, TransformStamped, Quaternion
-from nav_msgs.msg import OccupancyGrid, MapMetaData
+from nav_msgs.msg import OccupancyGrid, MapMetaData, Path
 from visualization_msgs.msg import Marker
 
-from abstractions.abstract_node import AbstractNode
+from scripts.abstractions.abstract_node import AbstractNode
+from scripts.support.path_finder import PathFinderJPS
 
 from multi_agent_sim.srv import *
 
@@ -211,10 +212,16 @@ class MapGrid2D(object):
     def find_path(self, start, goal):
         '''
         Uses a Path Finder to figure out a path from start to goal.
-
-        Currently just uses the given map so there will be alot of points...
+        start is a tuple of (x,y)
+        goal is a tuple of (x,y)
         '''
-        pass
+        pathfinder = PathFinderJPS(self.roi)
+        # convert start / goal to cells
+        s = self.pos2cell(*start)
+        g = self.pos2cell(*goal)
+        path, came_from, cost_so_far = pathfinder(s, g)
+        
+        return [(self.cell2pos(*p)) for p in path]
 
     def display(self):
         if self.map_is_loaded:
@@ -245,11 +252,27 @@ class FrontierExpander(AbstractNode):
         self.map_sub = rospy.Subscriber('map', OccupancyGrid, self.callback_map)
         self.frontier_pub = rospy.Publisher('frontiers', Marker, queue_size=10, latch=True)
 
+        self.path_req_srv = rospy.Service('RequestPath', RequestPath, self.callback_request_path)
+
         self.rate = rospy.Rate(2) #Hz
 
     def callback_map(self, msg):
         self.map_grid.update(msg)
         self.frontier_pub.publish(self.map_grid.markers)
+
+    def callback_request_path(self, req):
+        resp = RequesPathResponse()
+        s, g = (req.start.position.x, req.start.position.y), (req.end.position.x, req.end.position.y)
+        rospy.loginfo('Serving RequestPath: {} -> {}'.format(s, g))
+        path = self.map_grid.find_path(s, g)
+
+        resp.is_found = bool(path)
+        resp.path.poses = [PoseStamped() for i in range(len(path))]
+        for p in path:
+            resp.path.poses.pose.position.x = p[0]
+            resp.path.poses.pose.position.y = p[1]
+
+        return resp
 
     def spin(self):
         try:
