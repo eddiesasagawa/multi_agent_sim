@@ -18,7 +18,7 @@ def draw_grid(graph, start, goal, path=[], costs=[], point_to=[], spacing=2):
             "^" if loc in point_to and point_to[loc][0] == loc[0]-1 else
             ">" if loc in point_to and point_to[loc][1] == loc[1]+1 else
             "<" if loc in point_to and point_to[loc][1] == loc[1]-1 else
-            "#" if graph.map[*loc] == graph.map_occupied else
+            "#" if graph.map[loc[0], loc[1]] == graph.map_occupied else
             "."
             for loc in row
         ]
@@ -32,7 +32,7 @@ def draw_grid(graph, start, goal, path=[], costs=[], point_to=[], spacing=2):
                 "  A" if loc == start else
                 "  Z" if loc == goal else
                 "{:3}".format(int(costs[loc])) if loc in costs else
-                "  #" if graph.map[*loc] == graph.map_occupied else
+                "  #" if graph.map[loc[0], loc[1]] == graph.map_occupied else
                 "  ."
                 for loc in row
             ]
@@ -64,7 +64,7 @@ def red_blob_test():
                             (7, 3), (7, 4), (7, 5)]
     diagram4_weights = np.ones(diagram4.shape)
     for loc in weighted_locations:
-        diagram4_weights[loc[1], loc[0]] = 5
+        diagram4_weights[loc[0], loc[1]] = 5
 
     test_grid = SquareGrid(diagram4, weight_map=diagram4_weights)
     test_sets = (

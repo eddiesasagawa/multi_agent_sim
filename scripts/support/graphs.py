@@ -53,7 +53,7 @@ class SquareGrid(Graph):
         return 0 <= j < self.width and 0 <= i < self.height
     
     def is_unoccupied(self, loc):
-        return self.map[*loc] == self.map_traversable
+        return self.map[loc[0], loc[1]] == self.map_traversable
 
     def is_traversable(self, loc):
         return self.is_in_bounds(loc) and self.is_unoccupied(loc)
@@ -81,5 +81,5 @@ class SquareGrid(Graph):
         For now, this is only dependent on the destination, and is simply 1
         Since the map contains values between 0 and 255, we can scale the values as weights
         '''
-        return self.weights[*dest]
+        return self.weights[dest[0], dest[1]]
 
