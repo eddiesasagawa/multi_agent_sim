@@ -34,6 +34,8 @@ class LeaderControl(AbstractNode):
 
         ### ROS Stuff ###
         self.robot_name = rospy.get_param('robot_name')
+        self.waypoint_transition_radius = rospy.get_param('waypoint_transition_radius', default=1) # m
+        self.kp_turning = rospy.get_param('kp_turning', default=0.5)
 
         # publish twist commands to move bot
         self.cmd_pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
@@ -62,10 +64,11 @@ class LeaderControl(AbstractNode):
         self.pose = PoseStamped()
 
     def control(self):
-        # try:
-        #     tf_baselink_odom = self.tf_buffer.lookup_transform(self.frame_baselink, self.frame_odom, rospy.Time(0))
-        # except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
-        #     return
+        '''
+        Control action for determining motion command. 
+
+        Currently just a simple turn-n-drive controller, but ultimately would like to generate a proper pos/vel trajectory for the robot to follow
+        '''
         if self.active_goal is None:
             # stay still until we have a destination
             self.publish_motion_cmd(0, 0)
@@ -80,6 +83,26 @@ class LeaderControl(AbstractNode):
             return
 
         # compare to current way point
+        current_pos = np.array([tf_baselink_map.transform.translation.x, tf_baseline_map.transform.translation.y])
+        next_pt = np.array(self.current_path[-1]) #path is reversed
+        dist_to_pt = np.linalg.norm(next_pt-current_pos)
+
+        while dist_to_pt < self.waypoint_transition_radius:
+            # pop last point on path
+            del self.current_path[-1]
+            # if path is empty, we've reached the goal
+            if not self.current_path:
+                self.active_goal = None
+                self.publish_motion_cmd(0,0)
+                return
+            else:
+                next_pt = np.array(self.current_path[-1]) #path is reversed
+                dist_to_pt = np.linalg.norm(next_pt-current_pos)
+
+        ### CONTROL LAW ###
+        # For now, just turn first before driving forwards
+        tgt_heading = np.arctan2((next_pt[1]-current_pos[1]), (next_pt[0]-current_pos[0]))
+
         
 
     def publish_motion_cmd(self, v, w):
