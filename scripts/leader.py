@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 import sys
+import json
+
 import rospy
+
+import tf
+import tf2_ros
 
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped, Twist
@@ -11,6 +16,8 @@ from abstractions.abstract_node import AbstractNode
 
 class LeaderControl(AbstractNode):
     '''
+    @note use context manager to utilize log
+
     Published topics:
     * /rosout [rosgraph_msgs/Log] 2 publishers
     * /seggy1/cmd_vel [geometry_msgs/Twist] 1 publisher
@@ -33,9 +40,17 @@ class LeaderControl(AbstractNode):
         self.do_pub = do_pub
 
         ### ROS Stuff ###
-        self.robot_name = rospy.get_param('robot_name')
-        self.waypoint_transition_radius = rospy.get_param('waypoint_transition_radius', default=1) # m
-        self.kp_turning = rospy.get_param('kp_turning', default=0.5)
+        # Load from parameter server
+        self.robot_name                 = rospy.get_param('robot_name')
+        self.logfile_name               = rospy.get_param('logfile_name', default='leader.log')
+        self.proc_rate                  = rospy.get_param('processing_rate', default=10) #10Hz
+
+        self.max_vel                    = rospy.get_param('max_velocity', default=10.0) # m/s
+        self.max_angular_vel            = rospy.get_param('max_ang_vel', default=10.0) # m/s
+        self.waypoint_transition_radius = rospy.get_param('waypoint_transition_radius', default=1.0) # m
+        self.kp_turning                 = rospy.get_param('kp_turning', default=1.0)
+        self.kp_straight                = rospy.get_param('kp_straight', default=1.0)
+        
 
         # publish twist commands to move bot
         self.cmd_pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
@@ -48,20 +63,35 @@ class LeaderControl(AbstractNode):
         self.frontier_sub = rospy.Subscriber('frontiers', Marker, self.callback_frontiers)
 
         # processing rate
-        self.rate = rospy.Rate(10) #10Hz
+        self.rate = rospy.Rate(self.proc_rate) 
 
         # frame names
         self.frame_baselink = 'base_link_{}'.format(self.robot_name)
-        self.frame_basefootprint = 'base_footprint_{}'.format(self.robot_name)
-        self.frame_basestabilized = 'base_stabilized_{}'.format(self.robot_name)
         self.frame_odom = 'odom_{}'.format(self.robot_name)
         self.frame_map = 'map_{}'.format(self.robot_name)
 
         ### Internal ###
+        self.log = None
+
         self.frontier_pts = []
         self.active_goal = None
         self.current_path = []
         self.pose = PoseStamped()
+
+    def __enter__(self):
+        rospy.loginfo("Starting log file at {}".format(self.logfile_name))
+        self.log = open(self.logfile_name, 'w')
+        self.log.write("{'data': [")
+        return self
+
+    def __exit__(self, exc_type, exc_val, traceback):
+        self.log.write("]}")
+        self.log.close()
+        rospy.loginfo("Log file closed")
+
+    def log_entry(self, entry):
+        self.log.write(json.dumps(entry))
+        self.log.write(',')
 
     def control(self):
         '''
@@ -101,8 +131,34 @@ class LeaderControl(AbstractNode):
 
         ### CONTROL LAW ###
         # For now, just turn first before driving forwards
-        tgt_heading = np.arctan2((next_pt[1]-current_pos[1]), (next_pt[0]-current_pos[0]))
+        tgt_heading = np.arctan2((next_pt[1]), (next_pt[0]))
 
+        rpy = tf.transformations.euler_from_quaternion([tf_baselink_map.transform.rotation.x, tf_baselink_map.transform.rotation.y, tf_baselink_map.transform.rotation.z, tf_baselink_map.transform.rotation.w])
+        current_heading = rpy[-1] # yaw for 2d 
+
+        e_theta = tgt_heading - current_heading # NEED TO CHECK RANGES MATCH ([PI, -PI] or [0, 2PI])
+        e_2d = dist_to_pt # want to drive distance to 0
+
+        
+
+
+        ### Logging ###
+        self.log_entry({
+            'control': {
+                'rostime': rospy.get_time(),
+                'simtime': {'secs': tf_baselink_map.header.stamp.secs, 'nsecs': tf_baselink_map.header.stamp.nsecs},
+                'tf_baselink_map': 
+                    'x': current_pos[0],
+                    'y': current_pos[1]
+                    'theta': current_heading
+                },
+                'tf_target_map': {
+                    'x': next_pt[0],
+                    'y': next_pt[1],
+                    'theta': tgt_heading
+                }
+            }
+        })
         
 
     def publish_motion_cmd(self, v, w):
@@ -145,5 +201,5 @@ class LeaderControl(AbstractNode):
         pass
 
 if __name__ == "__main__":
-    ctrl = LeaderControl()
-    ctrl.spin()
+    with LeaderControl() as ctrl:
+        ctrl.spin()
