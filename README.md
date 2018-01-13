@@ -12,6 +12,28 @@ ROBOT:
 A SegwayRMP4000 robot with a Hokuyo laser scanner mounted on it. Went with this robot because I would like to be able to do outdoor navigation as well.
 
 TODOs:
-Navigation stack for robot. Make my own implementation of frontier exploration (A Frontier-Based Approach for Autonomous Exploration).
+Navigation stack for robot. 
+Migrate to using virtualenvs for isolating Morse and ROS python requirements
+
+
+
+
+DEPENDENCIES:
+ROS - Kinetic
+
+Python 2.7 for ROS (ROS doesn't support Python3)
+    packages:
+    - numpy
+    - matplotlib (not currently used; TODO: make optional)
+    - seaborn (not currently used; TODO: make optional)
+    - hdbscan
+    - cv2 (OpenCV2)
+    - scipy (not currently used; optional for now)
+
+MORSE - v??
+Python 3.x for MORSE
+    packages:
+    - just the morse installation
+
 
 
