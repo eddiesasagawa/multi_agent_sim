@@ -7,7 +7,7 @@ from Queue import PriorityQueue
 import numpy as np
 from scipy.spatial import distance
 
-from scripts.support.graphs import SquareGrid
+from support.graphs import SquareGrid
 
 class FastPriorityQueue(object):
     '''
@@ -206,7 +206,7 @@ class PathFinderJPS(PathFinderAbstract):
             for dir_vec in diagonal_dirs_to_check:
                 jp_list.extend(self.search_diagonal_jump_point((i+dir_vec[0],j+dir_vec[1]), self.cost_so_far[current]+1, dir_vec, current))
 
-            print('processed {} -> cdir: {}, ddir: {}, jp list: {}'.format(current, cardinal_dirs_to_check, diagonal_dirs_to_check, jp_list))
+            # print('processed {} -> cdir: {}, ddir: {}, jp list: {}'.format(current, cardinal_dirs_to_check, diagonal_dirs_to_check, jp_list))
             # process all found jump points
             for jp in jp_list:
                 if (jp.location is not None) and (jp.location not in self.cost_so_far or jp.cost < self.cost_so_far[jp.location]):

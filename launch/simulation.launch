@@ -16,19 +16,20 @@
             <!--param name="use_gui" value="$(arg use_gui)" /-->
         </node>
 
-        <!-- Robot Control -->
+        <!-- ROBOT CONTROL -->
         <group if="$(arg use_teleop)">
-            <!-- Start Teleop node and suppress publishes from segway_control -->
-            <node name="segway_control" pkg="multi_agent_sim" type="segway_control.py" args="--no-pub"/>
+            <!-- Start Teleop node (should suppress any other control sources too) -->
             <node name="teleop" pkg="teleop_twist_keyboard" type="teleop_twist_keyboard.py"/>
         </group>
 
-        <group unless="$(arg use_teleop)">
-            <!-- Segway_control will control robot -->
-            <node name="segway_control" pkg="multi_agent_sim" type="segway_control.py"/>
-        </group>
+        <!-- Leader Control Node -->
+        <node name="leader" pkg="multi_agent_sim" type="leader.py" output="screen">
+            <param name="laserscan_topic" value="/$(arg my_name)/base_scan"/>
+            <param name="logfile_name" value="$(find multi_agent_sim)/leader.log"/>
+            <param name="processing_rate" type="double" value="10.0"/>
+        </node>
 
-        <!-- Navigation -->
+        <!-- NAVIGATION -->
         <!-- <node name="localizer" pkg="multi_agent_sim" type="segway_localizer.py" output="screen"/> -->
         <node name="frontier_expansion" pkg="multi_agent_sim" type="frontier_expansion.py" output="screen"/>
 

@@ -17,8 +17,8 @@ from geometry_msgs.msg import Point, Pose, PoseStamped, Twist, TransformStamped,
 from nav_msgs.msg import OccupancyGrid, MapMetaData, Path
 from visualization_msgs.msg import Marker
 
-from scripts.abstractions.abstract_node import AbstractNode
-from scripts.support.path_finder import PathFinderJPS
+from abstractions.abstract_node import AbstractNode
+from support.path_finder import PathFinderJPS
 
 from multi_agent_sim.srv import *
 
@@ -38,6 +38,8 @@ class MapGrid2D(object):
         self.map_im = np.array([])
         self.roi = np.array([])
         self.frontiers = []
+        self.poi = []
+        self.debug_markers = []
 
         self.map_is_loaded = False
 
@@ -57,7 +59,7 @@ class MapGrid2D(object):
         # sns.set_context('poster')
         # sns.set_color_codes()
         # main map window 
-        # cv2.namedWindow('map_im', cv2.WINDOW_NORMAL)
+        cv2.namedWindow('map_im', cv2.WINDOW_NORMAL)
         # auxiliary matplotlib plots
         # self.fig = plt.figure(1)
         # plt.ion()
@@ -190,6 +192,9 @@ class MapGrid2D(object):
         marker.lifetime = rospy.Duration()
         return marker
 
+    def mark_map(self, point):
+        self.poi.append((self.pos2cell(point[0], point[1])))
+
     def update(self, map_msg):
         rospy.loginfo('update map')
         self.raw_msg = map_msg
@@ -220,8 +225,9 @@ class MapGrid2D(object):
         s = self.pos2cell(*start)
         g = self.pos2cell(*goal)
         path, came_from, cost_so_far = pathfinder(s, g)
+        self.debug_markers = path
         
-        return [(self.cell2pos(*p)) for p in path]
+        return [(self.cell2pos(p[1],p[0])) for p in path]
 
     def display(self):
         if self.map_is_loaded:
@@ -232,7 +238,13 @@ class MapGrid2D(object):
             for frontier in self.frontiers:
                 self.map_im = cv2.ellipse(self.map_im, tuple(frontier['mean'][::-1]), tuple(frontier['std'][::-1]), 0.0, 0.0, 360.0, (0, 255, 0))
 
-            cv2.imshow('map_im', self.map_im)
+            for p1, p2 in zip(self.poi[1:-1], self.poi[2:]):
+                self.map_im = cv2.arrowedLine(self.map_im, p1, p2, (255, 0, 0))
+
+            for p in self.debug_markers:
+                self.map_im = cv2.circle(self.map_im, p, 3, (255, 0, 0))
+
+            cv2.imshow('map_im', cv2.flip(self.map_im, 0))
             cv2.waitKey(10)
 
 class FrontierExpander(AbstractNode):
@@ -261,23 +273,24 @@ class FrontierExpander(AbstractNode):
         self.frontier_pub.publish(self.map_grid.markers)
 
     def callback_request_path(self, req):
-        resp = RequesPathResponse()
+        resp = RequestPathResponse()
         s, g = (req.start.position.x, req.start.position.y), (req.end.position.x, req.end.position.y)
         rospy.loginfo('Serving RequestPath: {} -> {}'.format(s, g))
         path = self.map_grid.find_path(s, g)
 
         resp.is_found = bool(path)
         resp.path.poses = [PoseStamped() for i in range(len(path))]
-        for p in path:
-            resp.path.poses.pose.position.x = p[0]
-            resp.path.poses.pose.position.y = p[1]
+        for i, p in enumerate(path):
+            self.map_grid.mark_map(p)
+            resp.path.poses[i].pose.position.x = p[0]
+            resp.path.poses[i].pose.position.y = p[1]
 
         return resp
 
     def spin(self):
         try:
             while not rospy.is_shutdown():
-                # self.map_grid.display()
+                self.map_grid.display()
                 self.rate.sleep()
 
         except rospy.ROSInterruptException:
