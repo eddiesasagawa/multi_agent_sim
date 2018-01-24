@@ -15,9 +15,6 @@ TODOs:
 Navigation stack for robot. 
 Migrate to using virtualenvs for isolating Morse and ROS python requirements
 
-
-
-
 DEPENDENCIES:
 ROS - Kinetic
 
@@ -26,9 +23,11 @@ Python 2.7 for ROS (ROS doesn't support Python3)
     - numpy
     - matplotlib (not currently used; TODO: make optional)
     - seaborn (not currently used; TODO: make optional)
+    - scipy (not currently used; optional for now)
+    - scikit-learn (dependency for hdbscan)
     - hdbscan
     - cv2 (OpenCV2)
-    - scipy (not currently used; optional for now)
+    
 
 MORSE - v??
 Python 3.x for MORSE
@@ -36,4 +35,66 @@ Python 3.x for MORSE
     - just the morse installation
 
 
+INSTALLATION INSTRUCTIONS:
+1. Update OS
+        sudo apt-get update
+        sudo apt-get upgrade
 
+2. Install pip, virtualenvwrapper
+        sudo apt-get install python-pip
+        sudo pip install virtualenv
+        sudo pip install virtualenvwrapper
+
+3. Set up virtual environments folder
+        mkdir ~/.virtualenvs
+
+4. Set up auto-sourcing of virtualenv
+    a. edit ~/.bashrc and append following lines:
+            export WORKON_HOME=~/.virtualenvs
+            source /usr/local/bin/virtualenvwrapper.sh
+
+5. Configure ROS-side environment
+    a. make environment
+            mkvirtualenv --no-site-packages mas_ros_env
+            deactivate
+
+    b. install ROS Kinetic (http://wiki.ros.org/kinetic/Installation/Ubuntu)
+    c. set up catkin workspace
+            mkdir -p ~/catkin_ws/src
+            catkin_make (must have sourced ROS setup)
+
+    d. get 3rd party ROS packages:
+        i) teleop-twist-keyboard:
+                sudo apt-get install ros-kinetic-teleop-twist-keyboard
+        2) segway_v3 (for segway_description)
+                cd ~/catkin_ws/src
+                git clone https://github.com/StanleyInnovation/segway_v3.git
+                sudo apt-get install ros-kinetic-base-local-planner
+                sudo apt-get install ros-kinetic-move-base-msgs
+                cd ~/catkin_ws
+                catkin_make
+        
+    e. install OpenCV 3
+        1) make sure we're in virtual env
+                workon mas_ros_env
+        2) install
+                pip install opencv-contrib-python
+
+6. Configure MORSE-side environment
+    a. make environment
+            mkvirtualenv -p /usr/bin/python3 --no-site-packages morse_env
+            deactivate
+    b. modify activation scripts for morse_env
+        Since morse_env will be using python3, we need to 'disconnect' the PYTHONPATH to /opt/ros/kinetic/lib/python2.7/dist-packages
+
+        1) add following lines to ~/.virtualenvs/morse_env/bin/postactivate
+                export OLD_PYTHONPATH=$PYTHONPATH
+                unset PYTHONPATH
+        2) add following lines to ~/.virtualenvs/morse_env/bin/predeactivate
+                export PYTHONPATH=$OLD_PYTHONPATH
+                unset OLD_PYTHONPATH
+        
+    c. install MORSE (TODO: map to virtualenv?)
+            sudo apt-get install morse-simulator
+
+7. Download this repository and clone it to ~/catkin_ws/src ...

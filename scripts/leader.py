@@ -17,6 +17,89 @@ from abstractions.abstract_node import AbstractNode
 
 from multi_agent_sim.srv import *
 
+class Path(object):
+    def __init__(self, pathlist, waypoint_radius):
+        '''
+        @param pathlist list of points along path, with 0 being at start
+        '''
+        self.start = pathlist[0]
+        self.end = pathlist[-1]
+        self.path = pathlist
+        self.wp_radius = waypoint_radius
+
+        self.wp_idx = 1 # waypoint index, starting at one (skip starting point)
+        self.wp_current = self.path[self.wp_idx]
+        self.finished = False
+        
+    def prune(self, pos):
+        '''
+        Remove path points within radius of pos
+        '''
+        pass
+
+    def centerline_error(self, pos):
+        '''
+        Calculate the shortest distance from pos to the line to current waypoint from previous.
+        ie. deviation from ideal path
+
+        Method:
+        line from point A to B (line AB), find shortest dist to point C, treat as infinite line (ie. don't clamp to just line ssegment)
+        parameterize line as P = A + t * (B - A), where t is some scalar value
+        Then project line AC to AB to get value of t
+        t = [AC . AB] / ||AB||^2
+
+        '''
+        pA = np.array(self.path[self.wp_idx-1])
+        pB = np.array(self.path[self.wp_idx])
+        pC = np.array(pos)
+
+        AB = pB - pA
+        AC = pC - pA
+
+        projAC = np.dot(AB, AC) / np.dot(AB, AB) # square of norm is just sum of squares
+        pP = pA + projAC * (AB)
+
+        return np.linalg.norm(pP - pC)
+
+    def update(self, state):
+        '''
+        given current state (x, y, theta), calculate errors in heading and centerline
+        Also update current waypoint
+
+        state is a 3-element array of x, y, theta in map frame
+        '''
+        pos = state[:2]
+        heading = state[-1]
+
+        ## First, prune the waypoints to make sure we are navigating to the right one
+        self.prune(pos)
+
+        ## Get centerline error
+        e_centerline = self.centerline_error(pos)
+
+        ## Get heading error
+        tgt_heading = np.arctan2((self.wp_current[1]), (self.wp_current[0]))
+        e_heading = tgt_heading - heading
+
+        ## Get distance to waypoint
+        e_dist = np.linalg.norm(self.wp_current-pos)
+
+        return e_centerline, e_heading, e_dist
+
+    @property
+    def current_waypoint(self):
+        '''
+        return current waypoint
+        '''
+        pass
+    
+    @property
+    def reached_goal(self):
+        '''
+        return true if end is reached.
+        '''
+        return self.finished
+
 class LeaderControl(AbstractNode):
     '''
     @note use context manager to utilize log
