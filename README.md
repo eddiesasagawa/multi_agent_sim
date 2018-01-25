@@ -37,31 +37,38 @@ Python 3.x for MORSE
 
 INSTALLATION INSTRUCTIONS:
 1. Update OS
-        sudo apt-get update
-        sudo apt-get upgrade
+
+        1) sudo apt-get update
+        2) sudo apt-get upgrade
 
 2. Install pip, virtualenvwrapper
-        sudo apt-get install python-pip
-        sudo pip install virtualenv
-        sudo pip install virtualenvwrapper
+
+        1) sudo apt-get install python-pip
+        2) sudo pip install virtualenv
+        3) sudo pip install virtualenvwrapper
 
 3. Set up virtual environments folder
-        mkdir ~/.virtualenvs
+
+        1) mkdir ~/.virtualenvs
 
 4. Set up auto-sourcing of virtualenv
+
     a. edit ~/.bashrc and append following lines:
-            export WORKON_HOME=~/.virtualenvs
-            source /usr/local/bin/virtualenvwrapper.sh
+
+            1) export WORKON_HOME=~/.virtualenvs
+            2) source /usr/local/bin/virtualenvwrapper.sh
 
 5. Configure ROS-side environment
+
     a. make environment
-            mkvirtualenv --no-site-packages mas_ros_env
-            deactivate
+            1) mkvirtualenv --no-site-packages mas_ros_env
+            2) deactivate
 
     b. install ROS Kinetic (http://wiki.ros.org/kinetic/Installation/Ubuntu)
+
     c. set up catkin workspace
-            mkdir -p ~/catkin_ws/src
-            catkin_make (must have sourced ROS setup)
+            1) mkdir -p ~/catkin_ws/src
+            2) catkin_make (must have sourced ROS setup)
 
     d. get 3rd party ROS packages:
         i) teleop-twist-keyboard:
@@ -80,7 +87,11 @@ INSTALLATION INSTRUCTIONS:
         2) install
                 pip install opencv-contrib-python
 
+    f. pip install packages
+        1. pip install numpy scipy matplotlib seaborn scikit-learn hdbscan rospkg catkin_pkg
+
 6. Configure MORSE-side environment
+
     a. make environment
             mkvirtualenv -p /usr/bin/python3 --no-site-packages morse_env
             deactivate
@@ -95,6 +106,9 @@ INSTALLATION INSTRUCTIONS:
                 unset OLD_PYTHONPATH
         
     c. install MORSE (TODO: map to virtualenv?)
-            sudo apt-get install morse-simulator
+            1) sudo apt-get install morse-simulator
+            2) sudo apt-get install python3-dev
+            3) sudo apt-get install python3-pip
+            4) sudo pip3 install rospkg catkin_pkg
 
 7. Download this repository and clone it to ~/catkin_ws/src ...
