@@ -36,6 +36,9 @@ Python 3.x for MORSE
 
 
 INSTALLATION INSTRUCTIONS:
+
+NOTE: MORSE and ROS both seem to like being in system folders (lots of apt-get install), so the benefits of virtual environments is a little hard to tell at this time. Maybe just for automatically switching python path for MORSE...
+
 1. Update OS
 
         1) sudo apt-get update
