@@ -1,6 +1,6 @@
 import numpy as np
-from scripts.support.graphs import SquareGrid
-from scripts.support.path_finder import PathFinderAStar, PathFinderJPS
+from support.graphs import SquareGrid
+from support.path_finder import PathFinderAStar, PathFinderJPS
 
 def draw_grid(graph, start, goal, path=[], costs=[], point_to=[], spacing=2):
     '''
