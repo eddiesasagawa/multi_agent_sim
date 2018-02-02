@@ -22,20 +22,66 @@ class Path(object):
         '''
         @param pathlist list of points along path, with 0 being at start
         '''
+        self.wp_radius = waypoint_radius
+
         self.start = pathlist[0]
         self.end = pathlist[-1]
         self.path = pathlist
-        self.wp_radius = waypoint_radius
+        self.wp_count = len(pathlist)
+        
+        self.link_lengths = self.calculate_link_lengths(self.path)
+        
+        self.set_waypoint(1) # waypoint index, starting at one (skip starting point)
 
-        self.wp_idx = 1 # waypoint index, starting at one (skip starting point)
-        self.wp_current = self.path[self.wp_idx]
         self.finished = False
+        
+    def calculate_link_lengths(self, pathlist):
+        ''' 
+        Pre-calculate inter-waypoint distances
+        Each element will be the distance to the next waypoint, ie. dist(wp_i, wp_i+1)
+        To maintain same length as the path, there will be a zero element at the end
+        '''
+        return [np.linalg.norm(wp_nx - wp_i) for wp_i, wp_nx in zip(pathlist[:-1], pathlist[1:])] + [0.0]
+
+    def set_waypoint(self, idx):
+        '''
+        Calculate waypoint metrics associated with waypoint #<idx> 
+
+        If idx is out-of-bounds, let it throw an exception as we process it
+        '''
+        self.wp_idx = idx
+        self.wp_current = self.path[self.wp_idx]
+        self.wp_prev = self.path[self.wp_idx-1]
+        self.wp_next = None if self.wp_idx >= (self.wp_count - 1) else self.path[self.wp_idx + 1]
+        self.next_link_length = self.link_lengths[self.wp_idx]
+
+    def advance_waypoint(self):
+        '''
+        wrapper for set_waypoint
+        '''
+        self.set_waypoint(self.wp_idx + 1)
         
     def prune(self, pos):
         '''
-        Remove path points within radius of pos
+        @brief Remove path points within radius of pos
+
+        We want to advance the waypoint if we pass it even a little bit
+        To achieve this, we advance the waypoint when:
+        1. We are within acceptance radius of current waypoint
+        2. (TBD) Closer to the next waypoint than the previous waypoint
+            - Idea is that if we overshoot the current waypoint, we might as well start navigating to the next one
+                However, this is not robust to needing to navigate around walls or corners.
+                Also if the next waypoint is just that much closer to the current than the previous, we might advance too early.
+                    This could be remedied by dividing by the link length of waypoints to get percentage comparisons instead of distance.
+
+        Since this is intended to be called regularly, we just advance only once even if we could technically skip a bunch of waypoints.      
         '''
-        pass
+        if np.linalg.norm(self.wp_current - pos) < self.wp_radius:
+            if self.wp_current == self.end:
+                self.finished = True
+            else:
+                self.advance_waypoint()
+
 
     def centerline_error(self, pos):
         '''
@@ -91,7 +137,7 @@ class Path(object):
         '''
         return current waypoint
         '''
-        pass
+        return self.wp_current
     
     @property
     def reached_goal(self):
@@ -167,7 +213,9 @@ class LeaderControl(AbstractNode):
         self.frontier_pts = []
         self.active_goal = None
         self.current_path = []
+        self.path = None
         self.state = [0,0,0]
+        self.cmd = Twist()
 
     def __enter__(self):
         rospy.loginfo("Starting log file at {}".format(self.logfile_name))
@@ -207,79 +255,60 @@ class LeaderControl(AbstractNode):
 
         # compare to current way point
         rpy = tf.transformations.euler_from_quaternion([tf_baselink_map.transform.rotation.x, tf_baselink_map.transform.rotation.y, tf_baselink_map.transform.rotation.z, tf_baselink_map.transform.rotation.w])
-
         self.state = np.array([tf_baselink_map.transform.translation.x, tf_baselink_map.transform.translation.y, rpy[-1]])
 
-        current_pos = self.state[:2]
-        next_pt = np.array(self.current_path[-1]) #path is reversed
-        dist_to_pt = np.linalg.norm(next_pt-current_pos)
+        e_centerline, e_heading, e_dist = self.path.update(self.state)
 
-        while dist_to_pt < self.waypoint_transition_radius:
-            # pop last point on path
-            del self.current_path[-1]
-            # if path is empty, we've reached the goal
-            if len(self.current_path) == 0:
-                rospy.loginfo("reached goal")
-                self.active_goal = None
-                self.publish_motion_cmd(0,0)
-                self.pick_new_goal()
-                return
-            else:
-                next_pt = np.array(self.current_path[-1]) #path is reversed
-                dist_to_pt = np.linalg.norm(next_pt-current_pos)
-
-        ### CONTROL LAW ###
-        # EXTREMELY NAIVE -- needs update later.
-        # also needs some local avoidance rules..
-
-        # For now, just turn first before driving forwards
-        tgt_heading = np.arctan2((next_pt[1]), (next_pt[0]))
-
-        rpy = tf.transformations.euler_from_quaternion([tf_baselink_map.transform.rotation.x, tf_baselink_map.transform.rotation.y, tf_baselink_map.transform.rotation.z, tf_baselink_map.transform.rotation.w])
-        current_heading = self.state[-1]
-
-        e_theta = tgt_heading - current_heading # NEED TO CHECK RANGES MATCH ([PI, -PI] or [0, 2PI])
-        e_2d = dist_to_pt # want to drive distance to 0
-
-        if e_theta > 0.1:
-            # turn in place
-            self.publish_motion_cmd(0, e_theta * self.proc_rate * self.kp_turning)
-
-        elif e_2d > self.waypoint_transition_radius:
-            # drive forwards
-            self.publish_motion_cmd(e_2d * (self.proc_rate) * self.kp_straight, 0)
-
-        else:
-            # we've reached our goal, so stop and mark
+        if self.path.reached_goal:
             self.active_goal = None
             self.publish_motion_cmd(0,0)
             self.pick_new_goal()
 
+        else:
+            ### CONTROL LAW ###
+            # EXTREMELY NAIVE -- needs update later.
+            # also needs some local avoidance rules..
+
+            # for now, just turn first before driving straight
+            if e_heading > 0.1:
+                # turn in place
+                self.publish_motion_cmd(0, e_heading * self.proc_rate * self.kp_turning)
+
+            else:
+                # drive straight
+                self.publish_motion_cmd(e_dist * self.proc_rate * self.kp_straight, 0)
+
+        ### Visualization / Logging ###
         self.publish_path_markers()
 
-        ### Logging ###
         self.log_entry({
             'control': {
                 'rostime': rospy.get_time(),
                 'simtime': {'secs': tf_baselink_map.header.stamp.secs, 'nsecs': tf_baselink_map.header.stamp.nsecs},
                 'tf_baselink_map': {
-                    'x': current_pos[0],
-                    'y': current_pos[1],
-                    'theta': current_heading
+                    'x': self.state[0],
+                    'y': self.state[1],
+                    'theta': self.state[2]
                 },
                 'tf_target_map': {
-                    'x': next_pt[0],
-                    'y': next_pt[1],
-                    'theta': tgt_heading
-                }
+                    'x': self.path.current_waypoint[0],
+                    'y': self.path.current_waypoint[1],
+                },
+                'e_centerline': e_centerline,
+                'e_heading': e_heading,
+                'e_dist': e_dist,
+                'command': {
+                    'v': self.cmd.linear.x,
+                    'w': self.cmd.angular.z,
+                },
             }
         })
         
     def publish_motion_cmd(self, v, w):
-        cmd = Twist()
-        cmd.linear.x = v
-        cmd.angular.z = w
-        # self.cmd_pub.publish(cmd)
+        self.cmd = Twist()
+        self.cmd.linear.x = v
+        self.cmd.angular.z = w
+        # self.cmd_pub.publish(self.cmd)
 
     def publish_path_markers(self):
         wp_marker = Marker()
@@ -337,7 +366,8 @@ class LeaderControl(AbstractNode):
 
             if path_to_goal.is_found:
                 self.current_path = [(p.pose.position.x, p.pose.position.y) for p in path_to_goal.path.poses]
-                self.current_path = self.current_path[::-1] # reverse the path so goal is at 0
+                # self.current_path = self.current_path[::-1] # reverse the path so goal is at 0
+                self.path = Path(self.current_path, self.waypoint_transition_radius)
                 rospy.loginfo("found new path")
 
     def callback_frontiers(self, msg):
