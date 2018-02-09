@@ -194,6 +194,9 @@ class LeaderControl(AbstractNode):
         # get frontier points
         self.frontier_sub = rospy.Subscriber('frontiers', Marker, self.callback_frontiers)
 
+        # subscribe to laser scans
+        self.scan_sub = rospy.Subscriber(self.laserscan_topic)
+
         # get access to Service
         rospy.wait_for_service('RequestPath')
         self.request_path = rospy.ServiceProxy('RequestPath', RequestPath)
@@ -216,6 +219,8 @@ class LeaderControl(AbstractNode):
         self.path = None
         self.state = [0,0,0]
         self.cmd = Twist()
+
+        self.scan_pts = []
 
     def __enter__(self):
         rospy.loginfo("Starting log file at {}".format(self.logfile_name))
@@ -372,10 +377,16 @@ class LeaderControl(AbstractNode):
 
     def callback_frontiers(self, msg):
         '''
-        For now, just save out current list of frontiers.
+        @todo For now, just save out current list of frontiers.
         Eventually, I should do something a little more robust such as comparing frontiers with blacklisted areas, etc.
         '''
         self.frontier_pts = msg.points
+
+    def callback_scans(self, msg):
+        '''
+        @todo for now, just save every point. Might want to apply a median filter or mean filter to remove outliers
+        '''
+        self.scan_pts = msg
 
     def spin(self):
         try:
