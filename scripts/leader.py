@@ -1,17 +1,20 @@
 #!/usr/bin/env python
 import sys
 import json
+import time
 import numpy as np
 
 import rospy
 
 import tf
 import tf2_ros
+import tf.transformations as tft
 
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped, Twist, Point
 from nav_msgs.msg import Odometry
 from visualization_msgs.msg import Marker
+from sensor_msgs.msg import LaserScan
 
 from abstractions.abstract_node import AbstractNode
 
@@ -41,7 +44,7 @@ class Path(object):
         Each element will be the distance to the next waypoint, ie. dist(wp_i, wp_i+1)
         To maintain same length as the path, there will be a zero element at the end
         '''
-        return [np.linalg.norm(wp_nx - wp_i) for wp_i, wp_nx in zip(pathlist[:-1], pathlist[1:])] + [0.0]
+        return [np.linalg.norm(np.array([wp_nx[0]-wp_i[0], wp_nx[1]-wp_i[1]])) for wp_i, wp_nx in zip(pathlist[:-1], pathlist[1:])] + [0.0]
 
     def set_waypoint(self, idx):
         '''
@@ -77,6 +80,7 @@ class Path(object):
         Since this is intended to be called regularly, we just advance only once even if we could technically skip a bunch of waypoints.      
         '''
         if np.linalg.norm(self.wp_current - pos) < self.wp_radius:
+            rospy.loginfo('Reached waypoint {} / {}'.format(self.wp_idx+1, self.wp_count))
             if self.wp_current == self.end:
                 self.finished = True
             else:
@@ -107,12 +111,13 @@ class Path(object):
 
         return np.linalg.norm(pP - pC)
 
-    def update(self, state):
+    def update(self, state, quat):
         '''
         given current state (x, y, theta), calculate errors in heading and centerline
         Also update current waypoint
 
         state is a 3-element array of x, y, theta in map frame
+        quat is the orientation quaternion of the robot
         '''
         pos = state[:2]
         heading = state[-1]
@@ -124,11 +129,17 @@ class Path(object):
         e_centerline = self.centerline_error(pos)
 
         ## Get heading error
-        tgt_heading = np.arctan2((self.wp_current[1]), (self.wp_current[0]))
-        e_heading = tgt_heading - heading
+        quat_conj = [-quat[0], -quat[1], -quat[2], quat[3]]
+        tgt_vec = [self.wp_current[0], self.wp_current[1], 0, 0]
+        tgt_r = tft.quaternion_multiply(tft.quaternion_multiply(quat, tgt_vec), quat_conj)
+
+        tgt_heading = np.arctan2((tgt_r[1]), (tgt_r[0]))
+
+        # target is now in robot frame, so the angle of the target is w.r.t. robot already
+        e_heading = tgt_heading
 
         ## Get distance to waypoint
-        e_dist = np.linalg.norm(self.wp_current-pos)
+        e_dist = np.linalg.norm(tgt_r[:2])
 
         return e_centerline, e_heading, e_dist
 
@@ -137,8 +148,13 @@ class Path(object):
         '''
         return current waypoint
         '''
+        rospy.loginfo('current waypoint: {}'.format(self.wp_current))
         return self.wp_current
-    
+
+    @property
+    def remaining_waypoints(self):
+        return self.path[self.wp_idx:]
+
     @property
     def reached_goal(self):
         '''
@@ -177,11 +193,11 @@ class LeaderControl(AbstractNode):
         self.proc_rate                  = rospy.get_param('~processing_rate') #10Hz
         self.logfile_name               = rospy.get_param('~logfile_name', default='leader.log')
 
-        self.max_vel                    = rospy.get_param('~max_velocity', default=10.0) # m/s
-        self.max_angular_vel            = rospy.get_param('~max_ang_vel', default=10.0) # m/s
+        self.max_vel                    = rospy.get_param('~max_velocity', default=1.0) # m/s
+        self.max_angular_vel            = rospy.get_param('~max_ang_vel', default=0.1) # rad/s
         self.waypoint_transition_radius = rospy.get_param('~waypoint_transition_radius', default=1.0) # m
-        self.kp_turning                 = rospy.get_param('~kp_turning', default=1.0)
-        self.kp_straight                = rospy.get_param('~kp_straight', default=1.0)
+        self.kp_turning                 = rospy.get_param('~kp_turning', default=0.1)
+        self.kp_straight                = rospy.get_param('~kp_straight', default=0.01)
 
         # publish twist commands to move bot
         self.cmd_pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
@@ -195,7 +211,7 @@ class LeaderControl(AbstractNode):
         self.frontier_sub = rospy.Subscriber('frontiers', Marker, self.callback_frontiers)
 
         # subscribe to laser scans
-        self.scan_sub = rospy.Subscriber(self.laserscan_topic)
+        self.scan_sub = rospy.Subscriber(self.laserscan_topic, LaserScan, self.callback_scans)
 
         # get access to Service
         rospy.wait_for_service('RequestPath')
@@ -212,6 +228,7 @@ class LeaderControl(AbstractNode):
 
         ### Internal ###
         self.log = None
+        self.first_entry_written = False
 
         self.frontier_pts = []
         self.active_goal = None
@@ -225,7 +242,7 @@ class LeaderControl(AbstractNode):
     def __enter__(self):
         rospy.loginfo("Starting log file at {}".format(self.logfile_name))
         self.log = open(self.logfile_name, 'w')
-        self.log.write("{'data': [")
+        self.log.write("{\"data\": [")
         return self
 
     def __exit__(self, exc_type, exc_val, traceback):
@@ -235,8 +252,11 @@ class LeaderControl(AbstractNode):
 
     def log_entry(self, entry):
         if self.log is not None:
+            if self.first_entry_written:
+                self.log.write(',')
+            else:
+                self.first_entry_written = True
             self.log.write(json.dumps(entry))
-            self.log.write(',')
 
     def control(self):
         '''
@@ -259,10 +279,11 @@ class LeaderControl(AbstractNode):
             return
 
         # compare to current way point
-        rpy = tf.transformations.euler_from_quaternion([tf_baselink_map.transform.rotation.x, tf_baselink_map.transform.rotation.y, tf_baselink_map.transform.rotation.z, tf_baselink_map.transform.rotation.w])
+        quat = [tf_baselink_map.transform.rotation.x, tf_baselink_map.transform.rotation.y, tf_baselink_map.transform.rotation.z, tf_baselink_map.transform.rotation.w]
+        rpy = tf.transformations.euler_from_quaternion(quat)
         self.state = np.array([tf_baselink_map.transform.translation.x, tf_baselink_map.transform.translation.y, rpy[-1]])
 
-        e_centerline, e_heading, e_dist = self.path.update(self.state)
+        e_centerline, e_heading, e_dist = self.path.update(self.state, quat)
 
         if self.path.reached_goal:
             self.active_goal = None
@@ -274,26 +295,25 @@ class LeaderControl(AbstractNode):
             # EXTREMELY NAIVE -- needs update later.
             # also needs some local avoidance rules..
 
-            # for now, just turn first before driving straight
-            if e_heading > 0.1:
-                # turn in place
-                self.publish_motion_cmd(0, e_heading * self.proc_rate * self.kp_turning)
-
-            else:
-                # drive straight
-                self.publish_motion_cmd(e_dist * self.proc_rate * self.kp_straight, 0)
+            # prioritize orientation, then scale velocity with orientation error
+            scaling = 1 - (abs(e_heading) / np.pi)
+            v_cmd = e_dist * scaling * self.proc_rate * self.kp_straight
+            w_cmd = e_heading * self.proc_rate * self.kp_turning
+            self.publish_motion_cmd(v_cmd, w_cmd)
 
         ### Visualization / Logging ###
         self.publish_path_markers()
 
         self.log_entry({
             'control': {
+                'walltime': time.time(),
                 'rostime': rospy.get_time(),
                 'simtime': {'secs': tf_baselink_map.header.stamp.secs, 'nsecs': tf_baselink_map.header.stamp.nsecs},
                 'tf_baselink_map': {
                     'x': self.state[0],
                     'y': self.state[1],
-                    'theta': self.state[2]
+                    'theta': self.state[2],
+                    'quat': quat,
                 },
                 'tf_target_map': {
                     'x': self.path.current_waypoint[0],
@@ -313,7 +333,7 @@ class LeaderControl(AbstractNode):
         self.cmd = Twist()
         self.cmd.linear.x = v
         self.cmd.angular.z = w
-        # self.cmd_pub.publish(self.cmd)
+        self.cmd_pub.publish(self.cmd)
 
     def publish_path_markers(self):
         wp_marker = Marker()
@@ -324,8 +344,8 @@ class LeaderControl(AbstractNode):
         wp_marker.frame_locked = True
         wp_marker.type = wp_marker.SPHERE
         wp_marker.action = wp_marker.ADD
-        wp_marker.pose.position.x = self.current_path[-1][0]
-        wp_marker.pose.position.y = self.current_path[-1][1]
+        wp_marker.pose.position.x = self.path.current_waypoint[0]
+        wp_marker.pose.position.y = self.path.current_waypoint[1]
         wp_marker.pose.orientation.w = 1.0
         wp_marker.scale.x = 0.4
         wp_marker.scale.y = 0.4
@@ -344,7 +364,7 @@ class LeaderControl(AbstractNode):
         marker.type = marker.LINE_STRIP
         marker.action = marker.ADD
 
-        marker.points = [Point(x=x, y=y) for x, y in self.current_path[::-1]]
+        marker.points = [Point(x=x, y=y) for x, y in self.path.remaining_waypoints]
 
         marker.pose.orientation.w = 1.0
         marker.scale.x = 0.25
@@ -404,7 +424,7 @@ class LeaderControl(AbstractNode):
         pass
 
 if __name__ == "__main__":
-    # with LeaderControl() as ctrl:
-    #     ctrl.spin()
-    ctrl = LeaderControl()
-    ctrl.spin()
+    with LeaderControl() as ctrl:
+        ctrl.spin()
+    # ctrl = LeaderControl()
+    # ctrl.spin()

@@ -133,7 +133,7 @@ class MapGrid2D(object):
         self.roi_origin.orientation.y = self.map_meta.origin.orientation.y
         self.roi_origin.orientation.z = self.map_meta.origin.orientation.z
         self.roi_origin.orientation.w = self.map_meta.origin.orientation.w
-        rospy.loginfo('Map Origin: ({}, {}), ROI origin: ({}, {})'.format(self.map_meta.origin.position.x, self.map_meta.origin.position.y, self.roi_origin.position.x, self.roi_origin.position.y))
+        # rospy.loginfo('Map Origin: ({}, {}), ROI origin: ({}, {})'.format(self.map_meta.origin.position.x, self.map_meta.origin.position.y, self.roi_origin.position.x, self.roi_origin.position.y))
 
         #convert contours to ROI
         self.outline[:, :, 0] = self.outline[:, :, 0] - self.roi_min.x

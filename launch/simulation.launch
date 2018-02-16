@@ -1,6 +1,6 @@
 <launch>
     <arg name="my_name" value="seggy1"/>
-    <arg name="use_teleop" value="true"/>
+    <arg name="use_teleop" value="false"/>
 
     <group ns="$(arg my_name)">
         <param name="robot_name" type="str" value="$(arg my_name)"/>
@@ -26,7 +26,7 @@
         <node name="leader" pkg="multi_agent_sim" type="leader.py" output="screen">
             <param name="laserscan_topic" value="/$(arg my_name)/base_scan"/>
             <param name="logfile_name" value="$(find multi_agent_sim)/leader.log"/>
-            <param name="processing_rate" type="double" value="10.0"/>
+            <param name="processing_rate" type="double" value="2.0"/>
         </node>
 
         <!-- NAVIGATION -->
@@ -38,6 +38,7 @@
         <arg name="base_scan_name" value="laser_link_$(arg my_name)"/>
         <node pkg="tf2_ros" type="static_transform_publisher" name="laser_link_broadcaster" args="0.275 0 0.4 0 0 0 1 $(arg base_link_name) $(arg base_scan_name)"/>
         <node pkg="tf2_ros" type="static_transform_publisher" name="urdf_base_link_broadcaster" args="0 0 0 0 0 0 1 $(arg base_link_name) /$(arg my_name)/base_link"/>
+        <node pkg="tf2_ros" type="static_transform_publisher" name="test_frame_broadcaster" args="1 0 0 0 0 0 1 $(arg base_link_name) /$(arg my_name)/test_frame"/>
 
         <!-- GMAPPING mapping -->
         <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping">
