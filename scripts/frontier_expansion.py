@@ -220,7 +220,8 @@ class MapGrid2D(object):
         start is a tuple of (x,y)
         goal is a tuple of (x,y)
         '''
-        pathfinder = PathFinderJPS(self.roi)
+        ret, thresh_im = cv2.threshold(self.roi, 128, 255, cv2.THRESH_BINARY)
+        pathfinder = PathFinderJPS(thresh_im)
         # convert start / goal to cells
         s = self.pos2cell(*start)
         g = self.pos2cell(*goal)

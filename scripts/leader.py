@@ -79,13 +79,15 @@ class Path(object):
 
         Since this is intended to be called regularly, we just advance only once even if we could technically skip a bunch of waypoints.      
         '''
-        if np.linalg.norm(self.wp_current - pos) < self.wp_radius:
-            rospy.loginfo('Reached waypoint {} / {}'.format(self.wp_idx+1, self.wp_count))
+        self.waypoint_transition_check(np.linalg.norm([self.wp_current[0]-pos[0], self.wp_current[1]-pos[1]]))
+
+    def waypoint_transition_check(self, dist_to_wp):
+        if dist_to_wp < self.wp_radius:
+            rospy.loginfo('Reached waypoint {} / {} [ {} ]'.format(self.wp_idx+1, self.wp_count, self.wp_current))
             if self.wp_current == self.end:
                 self.finished = True
             else:
                 self.advance_waypoint()
-
 
     def centerline_error(self, pos):
         '''
@@ -129,17 +131,17 @@ class Path(object):
         e_centerline = self.centerline_error(pos)
 
         ## Get heading error
-        quat_conj = [-quat[0], -quat[1], -quat[2], quat[3]]
-        tgt_vec = [self.wp_current[0], self.wp_current[1], 0, 0]
+        quat_conj = tft.quaternion_conjugate(quat)
+        tgt_vec = [self.wp_current[0]-state[0], self.wp_current[1]-state[1], 0, 0]
         tgt_r = tft.quaternion_multiply(tft.quaternion_multiply(quat, tgt_vec), quat_conj)
 
-        tgt_heading = np.arctan2((tgt_r[1]), (tgt_r[0]))
+        # tgt_heading = np.arctan2((tgt_r[1]), (tgt_r[0]))
 
         # target is now in robot frame, so the angle of the target is w.r.t. robot already
-        e_heading = tgt_heading
+        e_heading = np.arctan2(tgt_r[1], tgt_r[0])
 
         ## Get distance to waypoint
-        e_dist = np.linalg.norm(tgt_r[:2])
+        e_dist = np.linalg.norm([tgt_r[0], tgt_r[1]])
 
         return e_centerline, e_heading, e_dist
 
@@ -148,7 +150,6 @@ class Path(object):
         '''
         return current waypoint
         '''
-        rospy.loginfo('current waypoint: {}'.format(self.wp_current))
         return self.wp_current
 
     @property
@@ -272,6 +273,7 @@ class LeaderControl(AbstractNode):
 
         # get current pose in map
         try:
+            # tf_baselink_map = self.tf_buffer.lookup_transform(self.frame_map, self.frame_baselink, rospy.Time(0))
             tf_baselink_map = self.tf_buffer.lookup_transform(self.frame_baselink, self.frame_map, rospy.Time(0))
         except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
             # skip 
@@ -283,11 +285,32 @@ class LeaderControl(AbstractNode):
         rpy = tf.transformations.euler_from_quaternion(quat)
         self.state = np.array([tf_baselink_map.transform.translation.x, tf_baselink_map.transform.translation.y, rpy[-1]])
 
-        e_centerline, e_heading, e_dist = self.path.update(self.state, quat)
+        # e_centerline, e_heading, e_dist = self.path.update(self.state, quat)
+
+        # Get waypoint in robot frame
+        tf_mat = tft.quaternion_matrix(quat)
+        tf_mat[0, -1] = self.state[0]
+        tf_mat[1, -1] = self.state[1]
+        tf_mat = np.matrix(tf_mat)
+
+        P_gt = np.matrix([[self.path.current_waypoint[0], self.path.current_waypoint[1], 0, 1]]).transpose()
+        P_rt = tf_mat * P_gt
+
+        quat_conj = tft.quaternion_conjugate(quat)
+        tgt_vec = [self.path.current_waypoint[0]-self.state[0], self.path.current_waypoint[1]-self.state[1], 0, 0]
+        # target (waypoint) in robot frame
+        # tgt_r = tft.quaternion_multiply(tft.quaternion_multiply(quat, tgt_vec), quat_conj)
+        tgt_r = [P_rt[0, 0], P_rt[1, 0]]
+
+        e_dist = np.linalg.norm(tgt_r[:2])
+        e_theta = np.arctan2(tgt_r[1], tgt_r[0])
+        self.path.waypoint_transition_check(e_dist)
+
+        v_cmd = 0
+        w_cmd = 0
 
         if self.path.reached_goal:
             self.active_goal = None
-            self.publish_motion_cmd(0,0)
             self.pick_new_goal()
 
         else:
@@ -295,11 +318,18 @@ class LeaderControl(AbstractNode):
             # EXTREMELY NAIVE -- needs update later.
             # also needs some local avoidance rules..
 
-            # prioritize orientation, then scale velocity with orientation error
-            scaling = 1 - (abs(e_heading) / np.pi)
-            v_cmd = e_dist * scaling * self.proc_rate * self.kp_straight
-            w_cmd = e_heading * self.proc_rate * self.kp_turning
-            self.publish_motion_cmd(v_cmd, w_cmd)
+            # the location of the waypoint in robot frame will determine commands (x axis for straight, y for turning)
+            # instead of going backwards, focus on turning around
+            v_cmd = tgt_r[0] * self.proc_rate * self.kp_straight
+            w_cmd = e_theta * self.proc_rate * self.kp_turning
+
+            # # prioritize orientation, then scale velocity with orientation error
+            # scaling = 1 - (abs(e_heading) / np.pi)
+            # v_cmd = e_dist * scaling * self.proc_rate * self.kp_straight
+            # w_cmd = e_heading * self.proc_rate * self.kp_turning
+
+        self.publish_motion_cmd(v_cmd, w_cmd)
+        rospy.loginfo('[ {} ] -> [ {} ]/[ {} ], h: {}, d: {}, v:{}, w:{}'.format(self.state[:2], self.path.current_waypoint, tgt_r[:2], e_theta, e_dist, v_cmd, w_cmd))
 
         ### Visualization / Logging ###
         self.publish_path_markers()
@@ -319,9 +349,9 @@ class LeaderControl(AbstractNode):
                     'x': self.path.current_waypoint[0],
                     'y': self.path.current_waypoint[1],
                 },
-                'e_centerline': e_centerline,
-                'e_heading': e_heading,
-                'e_dist': e_dist,
+                # 'e_centerline': e_centerline,
+                # 'e_heading': e_heading,
+                # 'e_dist': e_dist,
                 'command': {
                     'v': self.cmd.linear.x,
                     'w': self.cmd.angular.z,
@@ -379,21 +409,25 @@ class LeaderControl(AbstractNode):
         if self.frontier_pts:
             # pick the closest
             dist_to_pts = [([p.x, p.y], np.linalg.norm([p.x-self.state[0], p.y-self.state[1]])) for p in self.frontier_pts]
-            self.active_goal = min(dist_to_pts, key=lambda p: p[-1])[0]
-            rospy.loginfo("set new goal: {}".format(self.active_goal))
+            dist_to_pts.sort(key=lambda p: p[-1])
 
-            path_req = RequestPathRequest()
-            path_req.start.position.x = self.state[0]
-            path_req.start.position.y = self.state[1]
-            path_req.end.position.x = self.active_goal[0]
-            path_req.end.position.y = self.active_goal[1]
-            path_to_goal = self.request_path(path_req)
+            for pt, dist in dist_to_pts:
+                path_req = RequestPathRequest()
+                path_req.start.position.x = self.state[0]
+                path_req.start.position.y = self.state[1]
+                path_req.end.position.x = pt[0]
+                path_req.end.position.y = pt[1]
+                path_to_goal = self.request_path(path_req)
 
-            if path_to_goal.is_found:
-                self.current_path = [(p.pose.position.x, p.pose.position.y) for p in path_to_goal.path.poses]
-                # self.current_path = self.current_path[::-1] # reverse the path so goal is at 0
-                self.path = Path(self.current_path, self.waypoint_transition_radius)
-                rospy.loginfo("found new path")
+                if path_to_goal.is_found:
+                    self.active_goal = pt
+                    self.current_path = [(p.pose.position.x, p.pose.position.y) for p in path_to_goal.path.poses]
+                    # self.current_path = self.current_path[::-1] # reverse the path so goal is at 0
+                    self.path = Path(self.current_path, self.waypoint_transition_radius)
+                    rospy.loginfo("found new path to {}".format(self.active_goal))
+                    break
+            else:
+                rospy.logwarn('no path to any frontier points')
 
     def callback_frontiers(self, msg):
         '''

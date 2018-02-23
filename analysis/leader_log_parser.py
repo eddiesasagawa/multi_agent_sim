@@ -2,6 +2,8 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 
+import tf.transformations as tft
+
 class LeaderBotAnalysis(object):
     def __init__(self, raw):
         self.raw = raw
@@ -29,7 +31,8 @@ class LeaderBotAnalysis(object):
             'err_heading': np.array([e['e_heading'] for e in self.ctl_entries]),
             'err_dist': np.array([e['e_dist'] for e in self.ctl_entries]),
             'cmd_v': np.array([e['command']['v'] for e in self.ctl_entries]),
-            'cmd_w': np.array([e['command']['w'] for e in self.ctl_entries])
+            'cmd_w': np.array([e['command']['w'] for e in self.ctl_entries]),
+            'Xquat': np.array([e['tf_baselink_map']['quat'] for e in self.ctl_entries]),
         }
         self.ctl_steps['t'] = self.ctl_steps['simtime']
 
@@ -38,6 +41,7 @@ class LeaderBotAnalysis(object):
         self.plot_errors()
         self.plot_motion()
         self.plot_cmds()
+        self.heading_analysis()
 
         plt.show()
 
@@ -101,7 +105,32 @@ class LeaderBotAnalysis(object):
         ax2.grid(True)
 
     def heading_analysis(self):
-        r_T_g = np.matrix([])
+        quat_conj = np.apply_along_axis(tft.quaternion_conjugate, 1, self.ctl_steps['Xquat'])
+        pose_vecs = [[x[0], x[1], 0, 0] for x in self.ctl_steps['X']]
+        tgts = [[t[0]-x[0], t[1]-x[1]] for t, x in zip(self.ctl_steps['tgt'], self.ctl_steps['X'])]
+        
+        tgts_r = np.array([tft.quaternion_multiply(tft.quaternion_multiply(q, v), q_c) for q, v, q_c in zip(self.ctl_steps['Xquat'], pose_vecs, quat_conj)])
+
+        heading_err = np.apply_along_axis(lambda r: np.arctan2(r[1], r[0]), 1, tgts_r)
+
+        plt.figure()
+        plt.title('Target in Robot frame')
+        plt.grid(True)
+        plt.hold(True)
+        plt.plot(tgts_r[:, 0], tgts_r[:, 1], 'r.-')
+        plt.plot(tgts_r[0, 0], tgts_r[0, 1], 'r*')
+        plt.xlabel('r_X (m)')
+        plt.ylabel('r_Y (m)')
+
+        plt.figure()
+        plt.title('Heading Error calculated')
+        plt.grid(True)
+        plt.hold(True)
+        plt.plot(self.ctl_steps['t'], self.ctl_steps['err_heading'], 'b.')
+        plt.plot(self.ctl_steps['t'], heading_err, 'r.')
+        plt.legend(['sim', 'calc'])
+        plt.xlabel('Time (s)')
+        plt.ylabel('Heading err (rad)')
 
 if __name__ == "__main__":
     with open('leader.log') as f:

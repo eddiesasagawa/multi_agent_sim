@@ -69,7 +69,7 @@ class PathFinderAbstract(object):
 
     def extract_path(self, goal, came_from, cost_so_far):
         if goal not in came_from:
-            return []
+            return [], came_from, cost_so_far
 
         path = [goal]
         prev = came_from[goal]

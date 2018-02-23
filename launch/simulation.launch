@@ -26,7 +26,7 @@
         <node name="leader" pkg="multi_agent_sim" type="leader.py" output="screen">
             <param name="laserscan_topic" value="/$(arg my_name)/base_scan"/>
             <param name="logfile_name" value="$(find multi_agent_sim)/leader.log"/>
-            <param name="processing_rate" type="double" value="2.0"/>
+            <param name="processing_rate" type="double" value="5.0"/>
         </node>
 
         <!-- NAVIGATION -->
