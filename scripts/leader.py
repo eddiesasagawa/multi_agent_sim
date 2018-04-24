@@ -2,16 +2,19 @@
 import sys
 import json
 import time
+import math
 import numpy as np
+from scipy.signal import medfilt
 
 import rospy
 
 import tf
 import tf2_ros
 import tf.transformations as tft
+import tf2_geometry_msgs
 
 from std_msgs.msg import String
-from geometry_msgs.msg import PoseStamped, Twist, Point
+from geometry_msgs.msg import PoseStamped, Twist, Point, TransformStamped
 from nav_msgs.msg import Odometry
 from visualization_msgs.msg import Marker
 from sensor_msgs.msg import LaserScan
@@ -21,6 +24,9 @@ from abstractions.abstract_node import AbstractNode
 from multi_agent_sim.srv import *
 
 class Path(object):
+    '''
+    @todo move to own file..
+    '''
     def __init__(self, pathlist, waypoint_radius):
         '''
         @param pathlist list of points along path, with 0 being at start
@@ -226,6 +232,7 @@ class LeaderControl(AbstractNode):
         self.frame_baselink = 'base_link_{}'.format(self.robot_name)
         self.frame_odom = 'odom_{}'.format(self.robot_name)
         self.frame_map = 'map_{}'.format(self.robot_name)
+        self.frame_scan = 'laser_link_{}'.format(self.robot_name)
 
         ### Internal ###
         self.log = None
@@ -239,7 +246,21 @@ class LeaderControl(AbstractNode):
         self.cmd = Twist()
 
         self.scan_pts = []
+        self.baselink_T_scan = np.eye(4)
 
+        # Get static transform for laser scan transformation to robot frame
+        try:
+            self.tf_scan_baselink = self.tf_buffer.lookup_transform(self.frame_scan, self.frame_baselink, rospy.Time(0))
+            scan_quat = [self.tf_scan_baselink.transform.rotation.x, self.tf_scan_baselink.transform.rotation.y, self.tf_scan_baselink.transform.rotation.z, self.tf_scan_baselink.transform.rotation.w]
+            C_scan = tft.quaternion_matrix(scan_quat)
+            self.baselink_T_scan[0:3, 0:3] = C_scan
+            self.baselink_T_scan[0, 3] = self.tf_scan_baselink.transform.translation.x
+            self.baselink_T_scan[1, 3] = self.tf_scan_baselink.transform.translation.y
+            self.baselink_T_scan[2, 3] = self.tf_scan_baselink.transform.translation.z
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+            # skip 
+            rospy.logwarn("Couldn't find TF from scan to baselink")
+        
     def __enter__(self):
         rospy.loginfo("Starting log file at {}".format(self.logfile_name))
         self.log = open(self.logfile_name, 'w')
@@ -306,6 +327,14 @@ class LeaderControl(AbstractNode):
         e_theta = np.arctan2(tgt_r[1], tgt_r[0])
         self.path.waypoint_transition_check(e_dist)
 
+        # OBSTACLE AVOIDANCE
+        # Rely on waypoint path finding for (static) obstacle avoidance. So if we see that an obstacle is blocking
+        # the way to next waypoint, pick a new goal.
+        #   Transform points to robot frame
+        #   Then pick points within a degree or two of e_theta.
+        #   If range is longer, there is interference and should be handled.
+
+
         v_cmd = 0
         w_cmd = 0
 
@@ -326,7 +355,7 @@ class LeaderControl(AbstractNode):
             # # prioritize orientation, then scale velocity with orientation error
             # scaling = 1 - (abs(e_heading) / np.pi)
             # v_cmd = e_dist * scaling * self.proc_rate * self.kp_straight
-            # w_cmd = e_heading * self.proc_rate * self.kp_turning
+            # w_cmd = e_heading * self.proc_rate * self.kp_turning            
 
         self.publish_motion_cmd(v_cmd, w_cmd)
         rospy.loginfo('[ {} ] -> [ {} ]/[ {} ], h: {}, d: {}, v:{}, w:{}'.format(self.state[:2], self.path.current_waypoint, tgt_r[:2], e_theta, e_dist, v_cmd, w_cmd))
@@ -438,9 +467,29 @@ class LeaderControl(AbstractNode):
 
     def callback_scans(self, msg):
         '''
-        @todo for now, just save every point. Might want to apply a median filter or mean filter to remove outliers
+        Filter the scan points to configured number
+        Processing of points will be handled by control step
         '''
-        self.scan_pts = msg
+        angles, angles_increment = np.linspace(msg.angle_min, msg.angle_max, len(msg.ranges), endpoint=True, retstep=True)
+        if not math.isclose(angles_increment, msg.angles_increment, abs_tol=0.001):
+            rospy.logwarn('scan callback: angles_increment mismatch {} vs {}'.format(angles_increment, msg.angles_increment))
+
+        # first apply median filter to get rid of outliers / spikes
+        # ranges_filt = medfilt(np.array(msg.ranges), 5)
+        # scan_pts = np.array([angles, ranges_filt])
+
+        # now subsample
+        # if self.scan_pt_count < len(angles):
+        #     indices = np.linspace(0, len(angles), self.scan_pt_count)
+        # else:
+        #     indices = range(len(angles))
+
+        # transform to robot baselink frame
+        for th, d in zip(angles, msg.ranges):
+            p = np.array([d*math.cos(th), d*math.sin(th), 0])
+
+
+        self.scan_pts = np.array([angles, msg.ranges]).transpose()
 
     def spin(self):
         try:
